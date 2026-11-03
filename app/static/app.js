@@ -43,7 +43,7 @@ function setBusy(value) {
   input.disabled = value || !!current()?.archived || !ready;
   $("send-button").disabled = value || !input.value.trim() || !!current()?.archived || !ready;
   document.querySelectorAll(".suggestion,.mixed-prompt,.new-chat,.conversation-button").forEach(element => { element.disabled = value || !ready; });
-  document.querySelectorAll(".card-actions button,.card-actions input,.result-heading button,.cart-line button").forEach(element => {
+  document.querySelectorAll(".card-actions button,.card-actions input,.result-heading button,.cart-line button,.carousel-controls button").forEach(element => {
     element.disabled = value || !ready || !!current()?.archived || element.dataset.unavailable === "true";
   });
   $("clear-history").disabled = value;
@@ -108,6 +108,50 @@ function makeCard(id, price) {
     const amount = node("span", "price", money(price)); amount.append(node("small", "", "AZN")); top.append(amount);
   }
   card.append(top); return card;
+}
+
+function carousel(grid, rows, createCard, domain) {
+  const wrapper = node("div", "carousel-shell"), controls = node("div", "carousel-controls");
+  grid.classList.add("result-carousel"); grid.setAttribute("role", "list");
+  grid.setAttribute("aria-label", window.SuperChatUI.translate(names[domain] || domain));
+  grid.tabIndex = 0;
+  let shown = 0;
+  const count = node("span", "carousel-count");
+  const previous = button("←", () => move(-1), "small-button carousel-arrow");
+  const next = button("→", () => move(1), "small-button carousel-arrow");
+  previous.setAttribute("aria-label", window.SuperChatUI.translate("Previous results"));
+  next.setAttribute("aria-label", window.SuperChatUI.translate("Next results"));
+  function update() {
+    window.SuperChatUI.setText(count, `Showing ${shown} of ${rows.length}`);
+    previous.dataset.unavailable = String(grid.scrollLeft <= 1);
+    next.dataset.unavailable = String(shown >= rows.length && grid.scrollLeft + grid.clientWidth >= grid.scrollWidth - 2);
+    previous.disabled = busy || previous.dataset.unavailable === "true";
+    next.disabled = busy || next.dataset.unavailable === "true";
+  }
+  function appendBatch() {
+    const end = Math.min(shown + 7, rows.length);
+    for (; shown < end; shown++) {
+      const card = createCard(rows[shown]); card.setAttribute("role", "listitem");
+      card.setAttribute("aria-posinset", String(shown + 1)); card.setAttribute("aria-setsize", String(rows.length));
+      grid.append(card);
+    }
+    update();
+  }
+  function move(direction) {
+    if (direction > 0 && grid.scrollLeft + grid.clientWidth >= grid.scrollWidth - grid.clientWidth) appendBatch();
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    grid.scrollBy({left: direction * Math.max(220, grid.clientWidth * .9), behavior: reduceMotion ? "instant" : "smooth"});
+  }
+  grid.addEventListener("scroll", () => {
+    if (grid.scrollLeft + grid.clientWidth >= grid.scrollWidth - 80 && shown < rows.length) appendBatch();
+    update();
+  }, {passive: true});
+  grid.addEventListener("keydown", event => {
+    if (event.target === grid && ["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); move(event.key === "ArrowRight" ? 1 : -1); }
+  });
+  controls.append(count, previous, next); wrapper.append(controls, grid);
+  appendBatch(); requestAnimationFrame(update);
+  return wrapper;
 }
 function flightCard(f) {
   const card = makeCard(f.id, f.price_azn);
@@ -178,7 +222,7 @@ function renderResult(result) {
       compareButton = button("Compare selected", () => send(`Compare ${names[result.domain].toLowerCase()} ${[...selected].join(" and ")}.`));
       compareButton.disabled = true; compareButton.dataset.unavailable = "true"; heading.append(compareButton);
     }
-    rows.forEach(row => {
+    const createCard = row => {
       const card = result.domain === "flights" ? flightCard(row) : result.domain === "shopping" ? productCard(row) : movieCard(row);
       if (compareButton) {
         const label = node("label", "card-meta"), checkbox = node("input"); checkbox.type = "checkbox";
@@ -186,8 +230,8 @@ function renderResult(result) {
         checkbox.addEventListener("change", () => { checkbox.checked ? selected.add(row.id) : selected.delete(row.id); compareButton.dataset.unavailable = String(selected.size < 2); compareButton.disabled = busy || !!current()?.archived || selected.size < 2; });
         label.append(checkbox, node("span", "", " Compare")); card.append(label);
       }
-      grid.append(card);
-    }); section.append(grid);
+      return card;
+    }; section.append(carousel(grid, rows, createCard, result.domain));
   }
   if (data.showtimes?.length) {
     const list = node("div", "showtime-list");
@@ -249,8 +293,9 @@ function renderProviderResult(result) {
     compare.disabled = true; compare.dataset.unavailable = "true"; section.append(compare);
     grid.compareButton = compare;
   }
-  rows.forEach(row => {
+  const createCard = row => {
     const card = node("article", "result-card");
+    card.classList.add(result.domain + "-card");
     card.append(node("div", "record-id", row.id));
     const picture = providerImage(row.poster_url || row.image_url, row.title || "Provider image");
     if (picture) card.append(picture);
@@ -270,8 +315,8 @@ function renderProviderResult(result) {
       if (row.category) card.append(node("p", "card-meta", row.category));
       if (row.condition) card.append(node("p", "card-meta", row.condition));
       if (row.description) card.append(node("p", "card-meta", row.description));
-      if (row.merchant) card.append(node("p", "card-meta", "Retailer: " + row.merchant));
-      if (source.provider === "BuyWhere") card.append(node("p", "card-meta", "Catalog price date: " + (row.price_as_of || "unknown") + (row.price_stale ? " · Older than 24 hours; recheck price" : "")));
+      if (row.merchant) card.append(node("p", "card-meta retailer-meta", "Retailer: " + row.merchant));
+      if (source.provider === "BuyWhere") card.append(node("p", "card-meta price-date", "Catalog price date: " + (row.price_as_of || "unknown") + (row.price_stale ? " · Older than 24 hours; recheck price" : "")));
       if (row.product_url) card.append(providerLink(source.provider === "BuyWhere" ? "View retailer offer" : "View on " + source.provider, row.product_url, source.provider === "BuyWhere"));
     } else {
       const official = !!row.movie_url;
@@ -299,9 +344,12 @@ function renderProviderResult(result) {
       });
       label.append(check, node("span", "", " Compare")); card.append(label);
     }
-    grid.append(card);
-  });
-  section.append(grid, providerLink("Open provider website", result.domain === "flights" ? "https://www.aviasales.com/" : source.source_url));
+    return card;
+  };
+  if (["details", "compare"].includes(result.operation)) {
+    rows.forEach(row => grid.append(createCard(row))); section.append(grid);
+  } else if (rows.length) section.append(carousel(grid, rows, createCard, result.domain));
+  section.append(providerLink("Open provider website", result.domain === "flights" ? "https://www.aviasales.com/" : source.source_url));
   if (data.cinemas?.length) {
     const places = node("div", "provider-locations"); places.append(node("h4", "", "CinemaPlus locations"));
     data.cinemas.forEach(c => places.append(providerLink(c.name, c.source_url)));
@@ -329,7 +377,7 @@ function renderTurn(turn) {
   heading.append(node("span", "assistant-avatar", "✦"), node("span", "", "SuperChat"));
   if (turn.routing?.source === "local") heading.append(node("span", "mode-badge", "Local assistant"));
   block.append(heading);
-  if (!turn.results?.length || (turn.routing?.language && !["en", "English"].includes(turn.routing.language))) block.append(node("div", "assistant-text", turn.content));
+  if (!turn.results?.length) block.append(node("div", "assistant-text", turn.content));
   else {
     const intro = node("div", "assistant-text");
     window.SuperChatUI.setText(intro, turn.results.some(r => r.data?.provider_error) ? "Here’s the current provider status." : turn.results.some(r => r.status === "clarification" || r.status === "error") ? "Let’s check a couple of details." : turn.results.some(r => r.code === "reserved") ? "Your mock reservation is ready." : "Here’s what I found for you.");
@@ -376,8 +424,11 @@ async function send(text, retry = false) {
   const chat = current();
   if (chat.pending && !retry) { showError("Resolve the unconfirmed message first to avoid repeating an operation.", () => send(null, true)); return; }
   if (!retry) {
+    const generated = text != null;
     text = (text ?? input.value).trim(); if (!text || text.length > 8000) return;
     chat.pending = {message: text, session_id: chat.sessionId, request_id: crypto.randomUUID()};
+    const language = window.SuperChatUI.requestLanguage || (generated ? chat.lastLanguage : null);
+    if (language) chat.pending.language = language;
     chat.turns.push({role: "user", content: text});
     if (chat.title === "New conversation") chat.title = text.slice(0, 52);
     chat.updated = Date.now(); input.value = ""; input.style.height = "auto";
@@ -386,6 +437,8 @@ async function send(text, retry = false) {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
   try {
     const answer = await api("/api/chat", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(chat.pending), signal: controller.signal});
+    chat.lastLanguage = answer.routing.language;
+    window.SuperChatUI.syncLanguage(answer.routing.language);
     chat.sessionId = answer.session_id; chat.turns = answer.state.history; chat.pending = null; clearError(); save();
     $("connection").classList.toggle("degraded", answer.routing.source === "local");
     $("connection").replaceChildren(node("span"), node("span", "", answer.routing.source === "local" ? "Local assistant" : "Connected to Gemini"));

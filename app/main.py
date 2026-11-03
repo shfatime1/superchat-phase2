@@ -110,11 +110,11 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
             if body.session_id is not None and owners.get(body.session_id) != owner:
                 raise SessionNotFound()
             if body.request_id is None:
-                result = service.chat(body.message, body.session_id)
+                result = service.chat(body.message, body.session_id, body.language)
                 owners[result.session_id] = owner
                 return result
             key = (owner, body.request_id)
-            fingerprint = (body.message, body.session_id)
+            fingerprint = (body.message, body.session_id, body.language)
             with guard:
                 lock = request_locks.setdefault(key, RLock())
             with lock:
@@ -123,7 +123,7 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
                     if previous != fingerprint:
                         raise HTTPException(409, "Request ID was already used for another message")
                     return result
-                result = service.chat(body.message, body.session_id)
+                result = service.chat(body.message, body.session_id, body.language)
                 owners[result.session_id] = owner
                 cached_requests[key] = (fingerprint, result)
                 return result

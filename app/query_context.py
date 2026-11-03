@@ -1,6 +1,7 @@
 """Scope deterministic extraction to the domain clauses in the current message."""
 
 import re
+from app.languages import normalize_text
 
 PRODUCTS = ("headphones", "earbuds", "laptops", "laptop", "smartphone", "phone", "smartwatch", "speaker",
             "running shoes", "backpack", "coffee machine", "board game", "coffee maker", "vacuum cleaner",
@@ -8,7 +9,7 @@ PRODUCTS = ("headphones", "earbuds", "laptops", "laptop", "smartphone", "phone",
 
 
 def explicit_domains(text):
-    text = text.casefold()
+    text = normalize_text(text)
     found = []
     if re.search(r"\b(flights?|airlines?|aviasales|baggage|passengers?|f\d{3}|av-[a-f0-9]{16})\b", text):
         found.append("flights")
@@ -21,6 +22,7 @@ def explicit_domains(text):
 
 def domain_clauses(message, identify=explicit_domains):
     """Keep 'and under $100' with its subject while separating explicit domains."""
+    message = normalize_text(message)
     parts = []
     for clause in re.split(r"\s+(?:and|also|plus)\s+|\s*;\s*", message):
         domains = identify(clause.casefold())

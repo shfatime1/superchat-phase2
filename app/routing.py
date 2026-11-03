@@ -13,10 +13,11 @@ from app.config import REFERENCE_DATE, Settings
 from app.dates import date_expression, resolve_date
 from app.cinema_queries import normalize_cinema_discovery
 from app.query_context import intent_messages
+from app.languages import detect_language, normalize_text
 from app.schemas import (Category, CinemaIntent, Domain, FlightIntent, RoutingResult,
                          ShoppingIntent)
 from app.state import SessionState
-from app.shopping_currency import CODES, SYMBOLS, normalize_shopping_money, shopping_price_bounds
+from app.shopping_currency import CODES, SYMBOLS, normalize_shopping_money, shopping_price_bounds, strip_price_constraints
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,17 @@ drop a flight departure date supplied alongside a Shopping request. A fresh name
 product search such as 'Show me laptops' starts a search with reset_context=true;
 do not return old selections or copy filters from a previous headphones search.
 Budget-only, sorting, selection and 'back to' follow-ups preserve their referent.
+Support Azerbaijani, English, Russian and mixed-language requests equally across
+all domains. Detect the CURRENT message language; do not copy the previous turn's
+language when the user switches. Normalize product search terms into English,
+preserving brands/models, quoted film names, IDs, amounts and dates. Azerbaijani
+'500$ dan ucuz notebooklar', English 'laptops under $500' and Russian 'ноутбуки до
+500 долларов' all mean query=laptops, currency=USD, max_price=500. 'laptops is price
+under 500$' has the same meaning. Never send budget grammar as the product query.
+AZ 'Bakıdan İstanbula sabah uçuşlar' and RU 'рейсы из Баку в Стамбул завтра'
+request flights with tomorrow's departure date. AZ 'ikinci', RU 'второй' and EN
+'second one' refer to the same saved result position. Never infer a cinema's
+screening language from the language used to ask the question.
 
 Competition reference date is {REFERENCE_DATE.isoformat()} (Monday), timezone Asia/Baku.
 Never use the real current date. Tonight/today = 2026-11-02, tomorrow = 2026-11-03,
@@ -142,9 +154,9 @@ class Router(Protocol):
 
 def product_search_query(message: str) -> str | None:
     """Keep explicit search names intact instead of broadening them to a category."""
-    text = message.casefold().strip(" .?!")
+    text = normalize_text(message).strip(" .?!")
     for symbol, currency in SYMBOLS.items():
-        text = text.replace(symbol, currency.casefold() + " ")
+        text = text.replace(symbol, " " + currency.casefold() + " ")
     if re.search(r"[^\x00-\x7f]", text):
         return None  # Preserve Gemini's normalized query for existing language support.
     text = re.sub(r"^(?:now|actually)[,\s]+", "", text)
@@ -152,6 +164,10 @@ def product_search_query(message: str) -> str | None:
     text = re.sub(
     r"^(?:please\s+)?(?:show(?:\s+me)?|find(?:\s+me)?|search\s+for|do\s+you\s+have|i\s+need|looking\s+for|i\s+want\s+to\s+buy|i\s+want\s+to\s+see|i\s+am\s+looking\s+for)\s+",
     "",text,)
+    without_budget = strip_price_constraints(text)
+    without_budget = re.sub(r"\s+and\s*$", "", without_budget).strip()
+    if without_budget != text and without_budget and re.search(r"\b(?:laptops?|headphones|earbuds|smartphones?|backpack|tablet|monitor|keyboard)\b", without_budget):
+        text = without_budget
     if re.match(r"^(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|with|only|same|also|cheaper|cheapest|price|any brand|make|keep|filter|sort)\b", text):
         return None  # A budget-only follow-up keeps the saved product query.
     if re.fullmatch(r"(?:" + CODES + r")(?:\s+please)?", text):
@@ -176,6 +192,16 @@ def normalize_request_queries(message, result, state, reference_date=None):
     Only unambiguous clauses are used; a flight's currency/date never leaks into
     Shopping or Cinema. The router's source stays visible as Gemini or local.
     """
+    message = normalize_text(message)
+    explicit_ids = {}
+    for match in re.finditer(r"\b(?:bw-[A-Za-z0-9_-]+|cp-[\w-]+|av-[a-f0-9]{16}|tmdb-\d+|ebay-v1\|\d+\|\d+)\b", message, re.I):
+        prefix, suffix = match[0].split("-", 1)
+        explicit_ids[match[0].casefold()] = prefix.upper() + "-" + suffix
+    for intent in result.intents:
+        for field in ("flight_ids", "product_ids", "movie_ids"):
+            ids = getattr(intent.parameters, field, None)
+            if ids:
+                setattr(intent.parameters, field, [explicit_ids.get(value.casefold(), value) for value in ids])
     fresh_shopping = False
     for intent, text in intent_messages(message, result):
         if intent.domain == "flights":
@@ -185,6 +211,15 @@ def normalize_request_queries(message, result, state, reference_date=None):
             if expression and resolve_date(expression, reference_date) is not None:
                 intent.parameters.departure_date_text = expression
                 intent.parameters.departure_date = resolve_date(expression, reference_date)
+            continue
+        if intent.domain == "cinema":
+            expression = date_expression(text)
+            if expression and resolve_date(expression, reference_date) is not None:
+                intent.parameters.date_text = expression
+                intent.parameters.date = resolve_date(expression, reference_date)
+            # Request/response language is never a screening-language constraint.
+            screening = re.search(r"\bin\s+(english|russian|azerbaijani)\b", text, re.I)
+            intent.parameters.language = screening[1].title() if screening else None
             continue
         if intent.domain != "shopping":
             continue
@@ -304,6 +339,7 @@ class GeminiRouter:
                 "Routing service returned an invalid result"
             ) from None
         result = normalize_request_queries(message, result, state, base_date)
+        result.language = detect_language(message, result.language or state.language)
         result = self._resolve_context(result, state, base_date)
         return normalize_cinema_discovery(message, result) if self.settings.data_mode != "fixtures" else result
 

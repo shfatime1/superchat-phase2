@@ -147,6 +147,7 @@ class RoutingResult(Schema):
 
 class ChatRequest(Schema):
     message: str = Field(min_length=1, max_length=8000)
+    language: Literal["az", "en", "ru"] | None = None
     session_id: UUID | None = None
     request_id: UUID | None = None
 

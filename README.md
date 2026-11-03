@@ -68,9 +68,15 @@ and are omitted from settings repr, responses and logs.
 | `COOKIE_SECURE` | `false` locally; `true` on Render HTTPS |
 | `PORT` / `HOST` | `8000` / `0.0.0.0`; Render supplies `PORT` |
 
-Local fallback supports a smaller set of English requests; Gemini handles richer intent
-extraction. Provider mode uses the current Asia/Baku date. Fixture mode retains the
+Gemini handles AZ/EN/RU and mixed-language intent extraction. Local fallback supports
+the tested multilingual search/follow-up grammar and clarifies unsupported requests.
+Reply language follows the current message or explicit page language preference.
+Provider mode uses the current Asia/Baku date. Fixture mode retains the
 original 2026-11-02 reference date.
+
+See [multilingual Shopping diagnostics](docs/multilingual-shopping.md) for the verified
+BuyWhere nullable-category fix, language behavior, and carousel checks. Discovery cards
+initially render seven records; arrows or swiping reveal all remaining returned matches.
 
 ## Update configuration for the existing Render service
 
@@ -152,8 +158,9 @@ backoff. Paid plans and bulk data replication are outside this integration.
 
 Try "Show headphones under 100 USD", "Find laptops", or "Find a backpack".
 Native price bounds are sent upstream and checked against the actual response currency;
-AZN budgets and stock/color filters return explicit unsupported-filter messages. Category
-and reported-brand filters, comparisons and price sorting cover only the first 50 returned
+AZN budgets and stock/color filters return explicit unsupported-filter messages. Categories
+and brands refine keyword search; explicitly reported mismatching brands are excluded.
+Comparisons, relevance filtering and price sorting cover only the first 50 returned
 records. They do not establish market-wide absence or a global cheapest offer. Stock remains
 unknown: BuyWhere's `local`/`unavailable` delivery ranking is not stock inventory.
 

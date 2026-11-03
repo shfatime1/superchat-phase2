@@ -7,7 +7,17 @@ CODES = r"azn|usd|eur|gbp|rub|try|aed|sgd|vnd|thb|myr"
 BUDGET_WORDS = r"under|below|less than|up to|max(?:imum)?|(?:with\s+)?(?:a\s+)?budget(?:\s+(?:of|up to))?"
 
 
+def strip_price_constraints(message):
+    token = r"(?:[$₼€]|\b(?:" + CODES + r")\b)"
+    amount = r"(?:" + token + r"\s*)?\d+(?:\.\d+)?\s*(?:" + token + r")?"
+    text = re.sub(r"\b(?:" + BUDGET_WORDS + r"|over|above|at least|min(?:imum)?)\s+" + amount, "", message, flags=re.I)
+    text = re.sub(r"\bwith\s+(?:a\s+)?" + amount + r"\s+budget\b", "", text, flags=re.I)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def shopping_price_bounds(message):
+    from app.languages import normalize_text
+    message = normalize_text(message)
     prefix = r"(?:(?:[$₼€]|\b(?:" + CODES + r")\b)\s*)?"
     bounds = {}
     for kind, words in (("min", r"over|above|at least|min(?:imum)?"), ("max", BUDGET_WORDS)):
@@ -22,6 +32,8 @@ def shopping_price_bounds(message):
 
 def normalize_shopping_money(message, parameters):
     """Explicit ISO codes take precedence over symbols and extracted defaults."""
+    from app.languages import normalize_text
+    message = normalize_text(message)
     values = dict(parameters)
     code = re.search(r"\b(" + CODES + r")\b", message, re.IGNORECASE)
     symbols = {currency for symbol, currency in SYMBOLS.items() if symbol in message}

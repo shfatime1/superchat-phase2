@@ -17,13 +17,16 @@ DATE_PATTERN = (r"\b(?:\d{4}-\d{2}-\d{2}|day after tomorrow|in \d+ days?|"
 
 def date_expression(message):
     """Return an explicit supported expression without inventing a date."""
-    match = re.search(DATE_PATTERN, message, re.IGNORECASE)
+    from app.languages import normalize_text
+    semantic = re.sub(r'"[^"\n]+"|“[^”\n]+”', "", normalize_text(message))
+    match = re.search(DATE_PATTERN, semantic, re.IGNORECASE)
     return match[0] if match else None
 
 
 def resolve_date(expression: str, reference_date: date | None = None) -> date | None:
     base = reference_date or REFERENCE_DATE
-    text = expression.strip().lower()
+    from app.languages import normalize_text
+    text = normalize_text(expression)
     if text in {"today", "tonight"}:
         return base
     if text == "tomorrow":

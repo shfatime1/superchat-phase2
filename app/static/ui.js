@@ -4,6 +4,7 @@ window.SuperChatUI = (() => {
   const key = "superchat.ui.preferences";
   const dictionary = Object.fromEntries([
     ["New chat", "Yeni söhbət", "Новый чат"], ["New conversation", "Yeni söhbət", "Новый чат"],
+    ["Previous results", "Əvvəlki nəticələr", "Предыдущие результаты"], ["Next results", "Növbəti nəticələr", "Следующие результаты"],
     ["YOUR ASSISTANTS", "KÖMƏKÇİLƏRİNİZ", "ВАШИ ПОМОЩНИКИ"], ["RECENT CHATS", "SON SÖHBƏTLƏR", "НЕДАВНИЕ ЧАТЫ"],
     ["Flights", "Uçuşlar", "Авиабилеты"], ["Shopping", "Alış-veriş", "Покупки"], ["Cinema", "Kino", "Кино"],
     ["Your conversations will appear here.", "Söhbətləriniz burada görünəcək.", "Здесь появятся ваши чаты."],
@@ -31,7 +32,7 @@ window.SuperChatUI = (() => {
     ["Three possibilities. One conversation.", "Üç imkan. Bir söhbət.", "Три возможности. Один чат."],
     ["Search flights, discover products, or plan a film night. Each conversation remembers your plans.", "Uçuş və məhsul axtarın, kino axşamı planlaşdırın. Hər söhbət planlarınızı yadda saxlayır.", "Ищите авиабилеты и товары, планируйте киновечер. Каждый чат помнит ваши планы."],
     ["Aviasales fares are cached. CinemaPlus supplies official listings and schedules. BuyWhere supplies product offers with price dates; links may earn BuyWhere a commission. eBay and TMDB are optional. Birmarket reuse permission is unconfirmed. Seats, purchases and reservations are unavailable.", "Aviasales qiymətləri keşlənib. CinemaPlus rəsmi film siyahısı və seansları təqdim edir. BuyWhere qiymət tarixləri ilə məhsul təklifləri təqdim edir; keçidlərdən komissiya qazana bilər. eBay və TMDB əlavə mənbələrdir. Birmarket məlumatlarının təkrar istifadəsinə icazə təsdiqlənməyib. Yerlər, alış və rezervasiya əlçatan deyil.", "Цены Aviasales кешированы. CinemaPlus предоставляет официальную афишу и расписание. BuyWhere предоставляет товары с датами цен и может получать комиссию по ссылкам. eBay и TMDB — дополнительные источники. Разрешение на повторное использование Birmarket не подтверждено. Места, покупки и бронирования недоступны."],
-    ["When Gemini is unavailable, a limited local assistant handles clear English requests.", "Gemini əlçatan olmayanda məhdud lokal köməkçi aydın ingiliscə sorğuları emal edir.", "Когда Gemini недоступен, ограниченный локальный помощник обрабатывает понятные запросы на английском."],
+    ["When Gemini is unavailable, a local assistant handles supported AZ/EN/RU requests and asks for clarification when needed.", "Gemini əlçatan olmayanda lokal köməkçi dəstəklənən AZ/EN/RU sorğularını emal edir və lazım olduqda dəqiqləşdirmə istəyir.", "Когда Gemini недоступен, локальный помощник обрабатывает поддерживаемые запросы AZ/EN/RU и при необходимости просит уточнение."],
     ["Saved chats stay in this browser. Server context resets when the backend restarts.", "Saxlanmış söhbətlər bu brauzerdə qalır. Server yenidən başlayanda kontekst sıfırlanır.", "Сохранённые чаты остаются в браузере. При перезапуске сервера контекст сбрасывается."],
     ["This product uses the TMDB API but is not endorsed or certified by TMDB.", "Bu məhsul TMDB API-dən istifadə edir, lakin TMDB tərəfindən təsdiqlənməyib və sertifikatlaşdırılmayıb.", "Продукт использует API TMDB, но не одобрен и не сертифицирован TMDB."],
     ["Provider data · Cached flight prices · Verify availability with the provider.", "Provayder məlumatları · Keşlənmiş uçuş qiymətləri · Mövcudluğu provayderdə yoxlayın.", "Данные провайдеров · Кешированные цены авиабилетов · Уточняйте наличие у провайдера."],
@@ -51,6 +52,25 @@ window.SuperChatUI = (() => {
     ["Limited provider results; filters and comparisons apply to returned options.", "Nəticələr məhduddur; filtrlər və müqayisələr göstərilən təkliflərə aiddir.", "Результаты ограничены; фильтры и сравнения применяются к показанным вариантам."],
     ["No matching provider results. This does not establish availability.", "Uyğun nəticə tapılmadı. Bu, mövcudluğu təsdiqləmir.", "Подходящих результатов нет. Это не подтверждает наличие."],
     ["No matching products found.", "Uyğun məhsul tapılmadı.", "Подходящих товаров не найдено."],
+    ["Please provide the missing flight search details.", "Çatışmayan uçuş məlumatlarını göstərin.", "Укажите недостающие данные для поиска рейса."],
+    ["Which product and how many units?", "Hansı məhsuldan neçə ədəd?", "Какой товар и сколько штук?"],
+    ["Which option do you mean? Give its ID or position in the list.", "Hansı seçimdir? ID və ya siyahıdakı nömrəni göstərin.", "Укажите ID варианта или его номер в списке."],
+    ["Choose at least two options to compare.", "Müqayisə üçün ən azı iki seçim edin.", "Выберите минимум два варианта для сравнения."],
+    ["That position is not in the displayed list.", "Bu nömrə göstərilən siyahıda yoxdur.", "Такого номера нет в показанном списке."],
+    ["That ID is not in the official catalogue.", "Bu ID rəsmi kataloqda yoxdur.", "Такого ID нет в официальном каталоге."],
+    ["Please check the minimum and maximum.", "Minimum və maksimumu yoxlayın.", "Проверьте минимум и максимум."],
+    ["That sort order is not supported.", "Bu sıralama dəstəklənmir.", "Этот порядок сортировки не поддерживается."],
+    ["That option does not match your stated constraints. Please clarify.", "Bu seçim şərtlərinizə uyğun deyil. Dəqiqləşdirin.", "Вариант не соответствует вашим условиям. Уточните запрос."],
+    ["Which exact date do you mean?", "Dəqiq hansı tarixi nəzərdə tutursunuz?", "Какую именно дату вы имеете в виду?"],
+    ["The data source is unavailable. Please try again.", "Məlumat mənbəyi əlçatan deyil. Yenidən cəhd edin.", "Источник данных недоступен. Попробуйте снова."],
+    ["That operation is not supported in this domain.", "Bu bölmədə həmin əməliyyat dəstəklənmir.", "Эта операция не поддерживается в этом разделе."],
+    ["The provider cannot verify that filter.", "Provayder bu filtri təsdiqləyə bilmir.", "Провайдер не может подтвердить этот фильтр."],
+    ["Please clarify the request.", "Sorğunu dəqiqləşdirin.", "Уточните запрос."],
+    ["unknown", "məlum deyil", "неизвестно"], ["cached", "keşlənmiş", "кешировано"], ["local cache", "lokal keş", "локальный кеш"],
+    ["Older than 24 hours; recheck price", "24 saatdan köhnədir; qiyməti yoxlayın", "Старше 24 часов; уточните цену"],
+    ["Airline unknown", "Aviaşirkət məlum deyil", "Авиакомпания неизвестна"], ["Hall unspecified", "Zal göstərilməyib", "Зал не указан"],
+    ["Seats unknown", "Yerlər məlum deyil", "Места неизвестны"], ["origin", "çıxış şəhəri", "город вылета"],
+    ["destination", "təyinat şəhəri", "город назначения"], ["departure date", "uçuş tarixi", "дата вылета"],
     ["Seats, baggage and cabin: unknown", "Yerlər, baqaj və kabin: məlum deyil", "Места, багаж и класс: неизвестны"],
     ["Stock: unverified · Delivery to Azerbaijan unverified", "Stok təsdiqlənməyib · Azərbaycana çatdırılma təsdiqlənməyib", "Наличие не подтверждено · Доставка в Азербайджан не подтверждена"],
     ["Provider reports estimated availability · Delivery to Azerbaijan unverified", "Provayder təxmini mövcudluq bildirir · Azərbaycana çatdırılma təsdiqlənməyib", "Провайдер сообщает о предполагаемом наличии · Доставка в Азербайджан не подтверждена"],
@@ -75,11 +95,12 @@ window.SuperChatUI = (() => {
     ["The connection was interrupted before we received confirmation. Your message is saved; retry safely.", "Təsdiq alınmadan bağlantı kəsildi. Mesajınız saxlanıb; yenidən cəhd edə bilərsiniz.", "Соединение прервалось до подтверждения. Сообщение сохранено; можно безопасно повторить."],
     ["Browser storage is full or unavailable. This chat works, but new messages may not survive a refresh.", "Brauzer yaddaşı doludur və ya əlçatan deyil. Yeni mesajlar səhifə yenilənəndə itə bilər.", "Хранилище браузера заполнено или недоступно. Новые сообщения могут не сохраниться после обновления."],
   ].map(([en, az, ru]) => [en, {en, az, ru}]));
-  let preferences = {theme: "dark", language: "en", assistant: "flights"};
+  let preferences = {theme: "dark", language: "en", assistant: "flights", languageExplicit: false};
   try { const saved = JSON.parse(localStorage.getItem(key) || "null");
     if (saved && typeof saved === "object") preferences = {
       theme: ["dark", "light"].includes(saved.theme) ? saved.theme : "dark",
       language: ["az", "en", "ru"].includes(saved.language) ? saved.language : "en",
+      languageExplicit: saved.languageExplicit === true,
       assistant: ["flights", "shopping", "cinema"].includes(saved.assistant) ? saved.assistant : "flights"};
   } catch { /* Preferences are optional, including in private browsing. */ }
   const prompts = {flights: ["Flights", "Where would you like to go?", "A little closer to your next destination."],
@@ -89,16 +110,28 @@ window.SuperChatUI = (() => {
     ["Departure: ", "Gediş: ", "Вылет: "], ["Return: ", "Qayıdış: ", "Обратно: "],
     ["Retailer: ", "Satıcı: ", "Продавец: "], ["Catalog price date: ", "Kataloq qiymətinin tarixi: ", "Дата цены в каталоге: "],
     ["Fetched ", "Alınma vaxtı: ", "Получено: "], ["Reference date · ", "İstinad tarixi · ", "Опорная дата · "],
-    ["View on ", "Burada bax: ", "Посмотреть на "], ["Listed languages: ", "Göstərilən dillər: ", "Указанные языки: "]
+    ["View on ", "Burada bax: ", "Посмотреть на "], ["Listed languages: ", "Göstərilən dillər: ", "Указанные языки: "],
+    ["Airports: ", "Hava limanları: ", "Аэропорты: "], ["Stops: ", "Dayanmalar: ", "Пересадки: "],
+    ["Duration: ", "Müddət: ", "Длительность: "]
   ];
   function translate(text) {
     if (dictionary[text]) return dictionary[text][preferences.language];
+    if (text.includes(" Missing: ")) {
+      const [before, after] = text.split(" Missing: ");
+      return translate(before) + {en: " Missing: ", az: " Çatışmayan: ", ru: " Не хватает: "}[preferences.language] + after.replace(/\.$/, "").split(", ").map(translate).join(", ");
+    }
+    if (text.includes(" · ")) return text.split(" · ").map(translate).join(" · ");
+    const count = /^Showing (\d+) of (\d+)$/.exec(text);
+    if (count) return {en: `Showing ${count[1]} of ${count[2]}`, az: `${count[2]} nəticədən ${count[1]} göstərilir`, ru: `Показано ${count[1]} из ${count[2]}`}[preferences.language];
     const prefix = prefixes.find(([en]) => text.startsWith(en));
-    if (prefix) return prefix[{en: 0, az: 1, ru: 2}[preferences.language]] + text.slice(prefix[0].length);
+    if (prefix) return prefix[{en: 0, az: 1, ru: 2}[preferences.language]] + translate(text.slice(prefix[0].length));
+    if (/^\d+ min$/.test(text)) return text.replace(/min$/, {en: "min", az: "dəq", ru: "мин"}[preferences.language]);
+    if (text.endsWith(" TMDB rating")) return text.replace(/TMDB rating$/, {en: "TMDB rating", az: "TMDB reytinqi", ru: "рейтинг TMDB"}[preferences.language]);
+    if (text.endsWith(" listed price")) return text.replace(/listed price$/, {en: "listed price", az: "göstərilən qiymət", ru: "указанная цена"}[preferences.language]);
     return text;
   }
   function setText(element, text) {
-    if (dictionary[text] || prefixes.some(([en]) => text.startsWith(en))) element.dataset.uiText = text;
+    if (dictionary[text] || /^Showing \d+ of \d+$/.test(text) || / · | Missing: | TMDB rating$| listed price$|^\d+ min$/.test(text) || prefixes.some(([en]) => text.startsWith(en))) element.dataset.uiText = text;
     else delete element.dataset.uiText;
     element.textContent = translate(text);
   }
@@ -137,7 +170,8 @@ window.SuperChatUI = (() => {
   });
   document.querySelectorAll("#scrim,#sidebar,#conversation-list,#messages").forEach(el => { el.dataset.i18nAria = el.getAttribute("aria-label"); });
   function setTheme(theme) { if (["light", "dark"].includes(theme)) { preferences.theme = theme; persist(); apply(); } }
-  function setLanguage(language) { if (["az", "en", "ru"].includes(language)) { preferences.language = language; persist(); apply(); } }
+  function setLanguage(language, explicit = true) { if (["az", "en", "ru"].includes(language)) { preferences.language = language; preferences.languageExplicit = explicit; persist(); apply(); } }
+  function syncLanguage(language) { if (!preferences.languageExplicit) setLanguage(language, false); }
   document.getElementById("page-language").addEventListener("change", event => setLanguage(event.target.value));
   ["theme-toggle", "theme-toggle-sidebar"].forEach(id => document.getElementById(id).addEventListener("click", () => setTheme(preferences.theme === "dark" ? "light" : "dark")));
   document.querySelectorAll("[data-assistant]").forEach(el => el.addEventListener("click", () => {
@@ -146,5 +180,7 @@ window.SuperChatUI = (() => {
     document.getElementById("menu-button").setAttribute("aria-expanded", "false"); document.getElementById("message-input").focus();
   }));
   apply();
-  return {translate, setText, setTheme, setLanguage, get language() { return preferences.language; }};
+  return {translate, setText, setTheme, setLanguage, syncLanguage,
+    get requestLanguage() { return preferences.languageExplicit ? preferences.language : null; },
+    get language() { return preferences.language; }};
 })();

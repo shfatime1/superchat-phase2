@@ -90,3 +90,11 @@ test('every static interface translation key has AZ and RU text', () => {
     for (const key of keys) assert.notEqual(f.ui.translate(key), key, `${language}: ${key}`);
   }
 });
+
+test('automatic language sync follows replies until the user explicitly selects a language', () => {
+  const f = fixture();
+  assert.equal(f.ui.requestLanguage, null);
+  f.ui.syncLanguage('az'); assert.equal(f.root.lang, 'az'); assert.equal(f.ui.requestLanguage, null);
+  f.ui.setLanguage('ru'); f.ui.syncLanguage('en');
+  assert.equal(f.root.lang, 'ru'); assert.equal(f.ui.requestLanguage, 'ru');
+});

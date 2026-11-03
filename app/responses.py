@@ -14,6 +14,7 @@ from pydantic import Field
 
 from app.domains.common import money
 from app.schemas import Schema
+from app.provider_locale import LABELS
 
 
 class ResponseSection(Schema):
@@ -158,62 +159,69 @@ class GeminiResponseFormulator:
         return "\n\n".join(render(outcomes[section.result_index], code, section.phrasing) for section in plan.sections)
 
 
-def render_provider(outcome):
+def render_provider(outcome, language="en"):
+    t = LABELS[language]
     data = outcome.data
     source = data["provider"]
     lines = [f"{source['provider']} — {source['status']}", source["notice"]]
     if source.get("fetched_at"):
-        lines.append("Fetched at: " + source["fetched_at"])
+        lines.append(t["fetched"] + ": " + source["fetched_at"])
     if data.get("provider_error"):
         lines.append(data["provider_error"]["message"])
     if outcome.status == "no_results":
-        lines.append("No matching provider results. This does not establish availability.")
+        lines.append(t["empty"])
     for index, row in enumerate(data.get("flights", []), 1):
         price = row["price"]
         lines.append(f"{index}. {row['id']} | {row['origin']} → {row['destination']} | "
-                     f"{row['departure_at']} | {row.get('airline') or 'Airline unknown'} "
-                     f"{row.get('flight_number') or ''} | {price['amount']} {price['currency']} (cached)")
+                     f"{row['departure_at']} | {row.get('airline') or t['unknown']} "
+                     f"{row.get('flight_number') or ''} | {price['amount']} {price['currency']} ({t['cached']})")
         for field in ("origin_airport", "destination_airport", "stops", "duration_min", "return_at", "booking_url"):
             if row.get(field) is not None:
-                lines.append(f"{field.replace('_', ' ')}: {row[field]}")
+                label = TEXT[language].get(field, {"origin_airport": ("Origin airport", "Çıxış hava limanı", "Аэропорт вылета"),
+                    "destination_airport": ("Destination airport", "Təyinat hava limanı", "Аэропорт назначения"),
+                    "return_at": ("Return", "Qayıdış", "Обратно"), "booking_url": ("Official link", "Rəsmi keçid", "Официальная ссылка")}.get(field, (field, field, field))[{"en": 0, "az": 1, "ru": 2}[language]])
+                lines.append(f"{label}: {row[field]}")
     for index, row in enumerate(data.get("products", []), 1):
         price = row.get("price")
         lines.append(f"{index}. {row['id']} | {row['title']}" + (f" | {price['amount']} {price['currency']}" if price else ""))
         for field in ("brand", "category", "color", "condition", "availability_status", "description"):
-            if row.get(field):
-                lines.append(field.replace("_", " ") + ": " + row[field])
+            if row.get(field) and (language == "en" or field != "description"):
+                labels = {"brand": ("brand", "marka", "бренд"), "category": ("category", "kateqoriya", "категория"),
+                          "color": ("color", "rəng", "цвет"), "condition": ("condition", "vəziyyət", "состояние"),
+                          "availability_status": ("availability status", "mövcudluq", "наличие")}
+                lines.append(labels.get(field, (field, field, field))[{"en": 0, "az": 1, "ru": 2}[language]] + ": " + row[field])
         if row.get("merchant"):
-            lines.append("Retailer: " + row["merchant"])
+            lines.append(t["retailer"] + ": " + row["merchant"])
         if source["provider"] == "BuyWhere":
-            lines.append("Catalog price date: " + (row.get("price_as_of") or "unknown") +
-                         (" (older than 24 hours; recheck price)" if row.get("price_stale") else ""))
+            lines.append(t["price_date"] + ": " + (row.get("price_as_of") or t["unknown"]) +
+                         (" (" + t["stale"] + ")" if row.get("price_stale") else ""))
         if row.get("product_url"):
             lines.append(row["product_url"])
     for index, row in enumerate(data.get("movies", []), 1):
-        label = "CinemaPlus official public listing" if row.get("movie_url") else "TMDB metadata; CinemaPlus screening unverified"
+        label = t["official"] if row.get("movie_url") else t["tmdb"]
         lines.append(f"{index}. {row['id']} | {row['title']} | {label}")
-        if row.get("synopsis"):
+        if row.get("synopsis") and language == "en":
             lines.append(row["synopsis"])
         if row.get("rating") is not None:
-            lines.append(f"TMDB rating: {row['rating']}/10")
+            lines.append(f"{t['rating']}: {row['rating']}/10")
         lines.append(row["metadata_url"])
         if row.get("showtimes_url"):
-            lines.append("Official schedule: " + row["showtimes_url"])
+            lines.append(t["schedule"] + ": " + row["showtimes_url"])
         if row.get("duration_min") is not None:
-            lines.append(f"Duration: {row['duration_min']} minutes")
+            lines.append(f"{t['duration']}: {row['duration_min']} {t['minutes']}")
     if data.get("cinemas"):
-        lines.append("CinemaPlus locations: " + "; ".join(c["name"] + " — " + c["source_url"] for c in data["cinemas"]))
+        lines.append(t["locations"] + ": " + "; ".join(c["name"] + " — " + c["source_url"] for c in data["cinemas"]))
     for row in data.get("showtimes", []):
         price = row.get("price")
         lines.append(f"{row['movie_title']} | {row['cinema_name']} | {row['date']} {row['time']} | "
-                     f"{row.get('hall') or 'Hall unspecified'}" + (f" | {price['amount']} {price['currency']} listed price" if price else ""))
-        lines.append("Official schedule: " + row["showtimes_url"] + " | Seat availability unknown")
+                     f"{row.get('hall') or t['hall']}" + (f" | {price['amount']} {price['currency']} {t['listed']}" if price else ""))
+        lines.append(t["schedule"] + ": " + row["showtimes_url"] + " | " + t["seats"])
     return "\n".join(lines)
 
 
 def render(outcome, language="en", phrasing="direct"):
     if "provider" in outcome.data:
-        return render_provider(outcome)
+        return render_provider(outcome, language)
     t, data = TEXT[language], outcome.data
     lines = [t[outcome.domain] + ": " + t.get(outcome.code, t["results"])]
     if outcome.domain == "shopping" and outcome.status == "no_results" and language == "en":

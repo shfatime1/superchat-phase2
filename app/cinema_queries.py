@@ -3,6 +3,7 @@
 import re
 
 from app.schemas import CinemaParameters
+from app.languages import normalize_text
 
 
 CHAIN = r"(?:cinema\s*plus|cine\s*mastercard)(?:\s+azerbaijan)?"
@@ -31,7 +32,7 @@ def normalize_cinema_discovery(message, result):
     intent = result.intents[0]
     if intent.intent not in {"search", "details", "filter", "follow_up"}:
         return result
-    text = message.casefold().strip(" .?!")
+    text = normalize_text(message).strip(" .?!")
     text = re.sub(r"^(?:please\s+)?(?:show(?:\s+me)?|list|find(?:\s+me)?)\s+", "", text)
     if re.fullmatch(rf"all\s+(?:{CHAIN}\s+)?(?:movies|films)", text):
         intent.parameters = CinemaParameters()

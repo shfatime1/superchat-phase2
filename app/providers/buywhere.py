@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import ipaddress
 import re
+import logging
 from urllib.parse import urlsplit
 
 from app.providers.http import ProviderFailure
@@ -12,6 +13,7 @@ from app.providers.models import Price, ProductOffer, Provenance, ProviderResult
 API = "https://api.buywhere.ai/v1"
 WEBSITE = "https://buywhere.ai/"
 MARKETS = {"US": "USD", "SG": "SGD", "VN": "VND", "TH": "THB", "MY": "MYR"}
+logger = logging.getLogger(__name__)
 NOTICE = ("BuyWhere multi-retailer catalog, not Birmarket. Advertised catalog prices may be old; "
           "check the price date and retailer checkout. Stock, delivery to Azerbaijan, taxes and final totals "
           "are unverified. BuyWhere may earn a commission through product links. "
@@ -66,7 +68,7 @@ class BuyWhereProvider:
         observed = datetime.fromisoformat(stamp.replace("Z", "+00:00")) if stamp else None
         if observed and observed.utcoffset() is None:
             raise ValueError("Price date requires timezone")
-        categories = raw.get("category_path", [])
+        categories = raw.get("category_path") or []
         if not isinstance(categories, list) or not all(isinstance(c, str) for c in categories):
             raise ValueError("Invalid categories")
         link = None
@@ -125,7 +127,11 @@ class BuyWhereProvider:
             return self.failure("invalid_range")
         if p.sort_by and p.sort_by not in {"price_asc", "price_desc"}:
             return self.failure("invalid_sort")
-        params = {"q": query.strip(), "country_code": self.market, "deliver_to": self.market,
+        terms = [query.strip()]
+        for refinement in (p.category, p.brand):
+            if refinement and refinement.casefold() not in " ".join(terms).casefold():
+                terms.append(refinement)
+        params = {"q": " ".join(terms), "country_code": self.market, "deliver_to": self.market,
                   "include_unshippable": "false", "limit": 50, "mode": "keyword"}
         if p.currency:
             params["currency"] = p.currency.upper()
@@ -141,7 +147,20 @@ class BuyWhereProvider:
                 raise ProviderFailure("invalid_response")
             if meta.get("degraded") or meta.get("status") == "degraded" or meta.get("emptiness_reason") in {"timeout", "api_error", "auth_failure"}:
                 raise ProviderFailure("upstream_degraded")
-            rows = list({row.id: row for row in (self.normalize(r) for r in doc.data["data"])}.values())
+            rows, rejected = [], 0
+            for raw in doc.data["data"]:
+                try:
+                    rows.append(self.normalize(raw))
+                except (KeyError, ValueError, TypeError, AttributeError):
+                    rejected += 1
+            if rejected:
+                logger.warning("provider_rows_rejected provider=BuyWhere count=%d", rejected)
+                if not rows:
+                    raise ProviderFailure("invalid_response")
+            rows = list({row.id: row for row in rows}.values())
+            merchant_urls = {"BW-" + str(raw.get("id")): str(raw.get("url") or "")
+                             for raw in doc.data["data"] if isinstance(raw, dict)}
+            rows = self.relevant(rows, query, merchant_urls)
             # Check native response currencies even when upstream filters were ignored.
             if p.currency or budget:
                 rows = [r for r in rows if r.price and r.price.currency == p.currency.upper()]
@@ -149,10 +168,8 @@ class BuyWhereProvider:
                 rows = [r for r in rows if r.price and
                     (p.min_price is None or r.price.amount >= Decimal(str(p.min_price))) and
                     (p.max_price is None or r.price.amount <= Decimal(str(p.max_price)))]
-            if p.category:
-                rows = [r for r in rows if p.category.casefold() in (r.category or "").casefold()]
             if p.brand:
-                rows = [r for r in rows if (r.brand or "").casefold() == p.brand.casefold()]
+                rows = [r for r in rows if not r.brand or r.brand.casefold() == p.brand.casefold()]
             if p.sort_by:
                 known = [r for r in rows if r.price]
                 if len({r.price.currency for r in known}) > 1:
@@ -167,6 +184,31 @@ class BuyWhereProvider:
         except (KeyError, ValueError, TypeError, AttributeError):
             self.http.discard()
             return self.failure("invalid_response")
+
+    @staticmethod
+    def relevant(rows, query, merchant_urls=None):
+        """Rank real returned records; reject accessories for a device-only query.
+
+        Merchant URL words are evidence when a retailer's title is only a model
+        number. Coarse upstream categories are not treated as product identity.
+        """
+        tokens = re.findall(r"[a-z0-9]+", query.casefold())
+        tokens = [t[:-1] if t.endswith("s") and len(t) > 3 else t for t in tokens]
+        laptop = any(t in {"laptop", "notebook"} for t in tokens)
+        accessories = r"\b(?:stand[ıi]?|riser|sleeve|charger|cable|adapter|replacement|screen protector|bag|case|cover|dock|mount|backpack|brush|cleaner|cleaning|toy|play set|tote|desk|support|accessory|accessories)s?\b"
+        wants_accessory = re.search(accessories, query, re.I)
+        ranked = []
+        for index, row in enumerate(rows):
+            title = row.title.casefold()
+            # URLs are returned by the provider; no merchant page is fetched.
+            evidence = title + " " + (row.category or "").casefold() + " " + (merchant_urls or {}).get(row.id, row.product_url).casefold()
+            if laptop and not wants_accessory and re.search(accessories, title + " " + (merchant_urls or {}).get(row.id, "").replace("-", " ")):
+                continue
+            if laptop and not any(term in evidence for term in ("laptop", "notebook", "chromebook")):
+                continue
+            score = sum(t in title for t in tokens)
+            ranked.append((-score, index, row))
+        return [row for _, _, row in sorted(ranked)]
 
     async def details(self, item_id):
         # The documented detail endpoint is authenticated even where anonymous

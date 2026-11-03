@@ -103,6 +103,29 @@ def test_category_and_reported_brand_filters_apply_to_returned_subset():
     assert len(result.items) == 1 and result.items[0].brand == "Sony" and result.partial
 
 
+def test_null_categories_and_malformed_neighbors_do_not_fail_a_valid_catalog_batch():
+    good = {**ITEM, "category_path": None}
+    provider = BuyWhereProvider(http(lambda r: httpx.Response(200, json={"data": [good, {**ITEM, "id": "bad", "price": {"amount": -1, "currency": "USD"}}]})))
+    result = run(provider.search(ShoppingParameters(query="headphones")))
+    assert result.error is None and len(result.items) == 1 and result.items[0].category is None
+
+
+def test_laptop_identity_uses_reported_merchant_urls_and_rejects_accessories():
+    rows = [{**ITEM, "id": str(i), "title": title, "category_path": None,
+             "url": "https://retailer.example/" + title.lower().replace(" ", "-")}
+            for i, title in enumerate(["Dell Laptop", "Laptop Brush", "Laptop and computer cleaning brush", "Toy Laptop",
+                "Laptop desk accessory", "UGREEN Laptop Standı", "Laptop bag", "CLT146401PR 14.1"])]
+    rows[-1]["url"] = "https://retailer.example/clt146401pr-hd-laptop-windows"
+    result = run(BuyWhereProvider(http(lambda r: httpx.Response(200, json={"data": rows}))).search(ShoppingParameters(query="laptops")))
+    assert [row.title for row in result.items] == ["Dell Laptop", "CLT146401PR 14.1"]
+
+
+def test_all_valid_relevant_products_remain_available_beyond_initial_carousel_page():
+    rows = [{**ITEM, "id": str(i), "title": "Laptop " + str(i)} for i in range(30)]
+    result = run(BuyWhereProvider(http(lambda r: httpx.Response(200, json={"data": rows}))).search(ShoppingParameters(query="laptops")))
+    assert len(result.items) == 30
+
+
 @pytest.mark.parametrize("status,code", [(403, "credentials_or_permissions"), (429, "rate_limited"), (503, "upstream_error")])
 def test_upstream_failures_return_no_fabricated_products(status, code):
     calls = []

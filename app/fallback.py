@@ -1,4 +1,4 @@
-"""Conservative English outage routing. No catalogue facts or actions are generated.
+"""Conservative AZ/EN/RU outage routing. No catalogue facts or actions are generated.
 
 Only explicit supported entities/constraints are extracted. Ambiguity is returned
 to the user instead of guessing. Domain services remain the authority for all data.
@@ -17,6 +17,7 @@ from app.routing import GeminiRouter, InvalidRouterResponse, RouterUnavailable, 
 from app.query_context import PRODUCTS, domain_clauses
 from app.schemas import RoutingResult
 from app.shopping_currency import normalize_shopping_money
+from app.languages import detect_language, normalize_text
 
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
 NUMBER = r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
@@ -45,13 +46,16 @@ class LocalRouter:
         return found
 
     def route(self, message, state):
+        language = detect_language(message, state.language)
+        semantic = normalize_text(message)
         try:
-            result = normalize_request_queries(message, self._route(message, state), state,
+            result = normalize_request_queries(semantic, self._route(semantic, state), state,
                                                self.reference_date() if self.reference_date else None)
-            return normalize_cinema_discovery(message, result)
+            result.language = language
+            return normalize_cinema_discovery(semantic, result)
         except (ValidationError, ValueError):
             # An unsupported local extraction must never become an HTTP 500.
-            return RoutingResult(category="ambiguous", source="local", language="en")
+            return RoutingResult(category="ambiguous", source="local", language=language)
 
     def _route(self, message, state):
         text = message.casefold().strip()
@@ -75,7 +79,7 @@ class LocalRouter:
         if not domains:
             if re.search(r"\b(weather|president|politics|recipe|code|poem|football)\b", text):
                 return unresolved("out_of_scope")
-            supported = re.search(r"\b(cheaper|cheapest|first|second|third|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|direct|compare|book|reserve|add|remove|under|details|available)\b", text)
+            supported = re.search(r"\b(cheaper|cheapest|first|second|third|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|direct|compare|book|reserve|add|remove|under|details|available|any brand)\b", text)
             supported = supported or re.fullmatch(NUMBER + r"(?:\s+(?:please|seats|units))?\.?", text)
             supported = supported or re.fullmatch(r"(?:from )?(?:baku|istanbul|dubai|moscow|tbilisi|tashkent|gyd|ist|dxb|svo|tbs|tas)\.?", text)
             if not state.last_active_domain or not supported:
@@ -221,6 +225,8 @@ class LocalRouter:
                     p["flight_number"] = row.flight_number
         elif domain == "shopping":
             p, clear_parameters = normalize_shopping_money(text, p)
+            if "any brand" in text:
+                clear_parameters.append("brand")
             explicit_query = product_search_query(text) if action in {"search", "sort"} else None
             for term in PRODUCTS:
                 if term in text:
@@ -239,6 +245,12 @@ class LocalRouter:
             elif explicit_query == "":
                 p = {}
         else:
+            screening = re.search(r"\bin\s+(english|russian|azerbaijani)\b", text, re.I)
+            if screening:
+                p["language"] = screening[1].title()
+            quoted = re.search(r'["“]([^"”]+)["”]', text)
+            if quoted:
+                p["movie_title"] = quoted[1]
             for movie in self.repos.movies.list_all():
                 if movie.title.casefold() in text:
                     p["movie_title"] = movie.title
