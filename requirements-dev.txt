@@ -1,0 +1,4 @@
+# Optional real-browser integration checks; not needed by Render.
+-r requirements.txt
+pytest>=8,<10
+playwright>=1.50,<2

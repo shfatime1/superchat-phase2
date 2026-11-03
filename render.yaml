@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: superchat-phase2
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.serve
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: TRAVELPAYOUTS_API_TOKEN
+        sync: false
+      - key: SUPERCHAT_DATA_MODE
+        value: providers
+      - key: SHOPPING_PROVIDER
+        value: birmarket
+      - key: FLIGHT_CURRENCY
+        value: AZN
+      - key: PROVIDER_TIMEOUT_SECONDS
+        value: "8"
+      - key: PROVIDER_RETRIES
+        value: "2"
+      - key: PROVIDER_CACHE_TTL
+        value: "300"
+      - key: SUPERCHAT_ROUTING_MODE
+        value: auto
+      - key: COOKIE_SECURE
+        value: "true"

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f6f7f5">
+  <meta name="description" content="Flights, finds, and film nights. One conversation with SuperChat.">
+  <title>SuperChat — A little help for your next plan</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <button class="scrim" id="scrim" aria-label="Close sidebar" hidden></button>
+  <aside class="sidebar" id="sidebar" aria-label="Conversation navigation">
+    <a class="brand" href="/" aria-label="SuperChat home"><span class="brand-mark">S<span>✦</span></span><span>SuperChat<span class="brand-dot">.</span></span></a>
+    <button class="new-chat" id="new-chat"><span class="icon" aria-hidden="true">＋</span> New conversation <span class="new-shortcut" aria-hidden="true">↗</span></button>
+    <div class="sidebar-label">YOUR CONVERSATIONS</div>
+    <nav id="conversation-list" class="conversation-list" aria-label="Saved conversations"></nav>
+    <div id="empty-history" class="empty-history">Your next great plan<br>starts with a conversation.</div>
+    <div class="sidebar-bottom">
+      <div class="workspace-note"><span class="small-spark" aria-hidden="true">✦</span><div><strong>One chat. More possibilities.</strong><p>Flights, shopping & cinema</p></div></div>
+      <button class="clear-history" id="clear-history">Clear saved conversations</button>
+      <div class="profile"><span class="avatar">Y</span><span>You<span class="profile-sub">Personal workspace</span></span><span class="privacy-dot" title="Private to this browser">●</span></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="header-left"><button class="icon-button mobile-menu" id="menu-button" aria-label="Open sidebar" aria-expanded="false">☰</button><span class="workspace-title">Your everyday copilot</span><span class="beta-tag">PHASE 2</span></div>
+      <div class="header-right"><span id="connection" class="connection"><span></span> Ready to help</span><button class="icon-button" id="info-button" aria-label="About this demo">ⓘ</button></div>
+    </header>
+    <div class="scroll-area" id="scroll-area">
+      <section class="welcome" id="welcome">
+        <div class="welcome-emblem" aria-hidden="true"><span>✦</span><i></i><b>✧</b></div>
+        <div class="eyebrow">A LITTLE HELP. A LOT OF POSSIBILITIES.</div>
+        <h1>What’s your next <em>plan?</em></h1>
+        <p class="welcome-description">Somewhere to go. Something to find. A film to get lost in.<br>Let’s make it happen, one conversation at a time.</p>
+        <div class="suggestions">
+          <button class="suggestion" data-prompt="Find flights from Baku to Istanbul on Friday, cheapest first."><span class="tile-icon flights-icon" aria-hidden="true">↗</span><span class="tile-category">TAKE OFF</span><strong>Find your next escape</strong><span class="tile-copy">Baku to Istanbul this Friday</span><span class="tile-arrow" aria-hidden="true">↗</span></button>
+          <button class="suggestion" data-prompt="Show me wireless headphones under 100 AZN."><span class="tile-icon shopping-icon" aria-hidden="true">♧</span><span class="tile-category">FIND YOUR THING</span><strong>A little upgrade</strong><span class="tile-copy">Wireless headphones under 100 AZN</span><span class="tile-arrow" aria-hidden="true">↗</span></button>
+          <button class="suggestion" data-prompt="What movies are playing tonight?"><span class="tile-icon cinema-icon" aria-hidden="true">▤</span><span class="tile-category">MAKE A NIGHT OF IT</span><strong>Something worth watching</strong><span class="tile-copy">See what’s playing tonight</span><span class="tile-arrow" aria-hidden="true">↗</span></button>
+        </div>
+        <button class="mixed-prompt" data-prompt="Find a flight from Baku to Istanbul on Friday and a backpack under 100 AZN."><span aria-hidden="true">✧</span> A trip and a new backpack? Ask for both. <span aria-hidden="true">→</span></button>
+      </section>
+      <section id="messages" class="messages" aria-label="Conversation" aria-live="polite" aria-relevant="additions"></section>
+      <div id="loading" class="loading" role="status" hidden><span class="assistant-avatar" aria-hidden="true">✦</span><span>Putting your plan together<span class="dots"><i></i><i></i><i></i></span></span></div>
+    </div>
+    <div class="composer-zone">
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="error" class="error-banner" role="alert" hidden></div>
+      <form id="chat-form" class="composer">
+        <label class="sr-only" for="message-input">Message SuperChat</label>
+        <textarea id="message-input" rows="1" maxlength="8000" placeholder="Ask about flights, products, or a night at the movies…" required></textarea>
+        <div class="composer-bottom"><span class="composer-hint"><span aria-hidden="true">✦</span> All your plans, one place</span><button id="send-button" class="send-button" type="submit" aria-label="Send message" disabled>↑</button></div>
+      </form>
+      <div class="composer-footer"><span>Provider data · Cached flight prices · Availability requires provider verification.</span><span class="reference-date">Asia/Baku</span></div>
+    </div>
+  </main>
+  <dialog id="info-dialog"><button class="icon-button dialog-close" id="close-info" aria-label="Close information">×</button><span class="eyebrow">MEET SUPERCHAT</span><h2>Three possibilities.<br>One conversation.</h2><p>Search flights, discover products, or plan a film night. Switch topics whenever you like — each conversation remembers your plans.</p><p>Flight prices come from the Aviasales Data API cache. Birmarket catalog access and CinemaPlus screenings require authorization. Optional TMDB results provide movie metadata only. Reservations and purchases are unavailable.</p><p>When Gemini is unavailable, a limited local assistant handles clear English requests and asks you to clarify anything uncertain.</p><p class="dialog-note">Saved chats stay in this browser. Server context resets when the backend restarts. No account or payment details are needed.</p><p class="dialog-note">This product uses the TMDB API but is not endorsed or certified by TMDB. <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer"><img class="tmdb-logo" alt="TMDB" src="https://www.themoviedb.org/assets/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" width="92"></a> supplies optional movie metadata.</p></dialog>
+</body>
+</html>

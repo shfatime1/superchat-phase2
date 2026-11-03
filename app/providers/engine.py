@@ -1,0 +1,167 @@
+"""Bridge async providers into the existing synchronous, transactional chat flow."""
+
+import asyncio
+from contextlib import nullcontext
+
+from app.domain_models import DomainResult
+from app.domains.common import DomainIssue
+from app.domains.engine import DomainEngine
+from app.providers.aviasales import AviasalesProvider
+from app.providers.birmarket import BirmarketProvider
+from app.providers.cinema import CinemaPlusProvider, TMDBProvider
+from app.providers.ebay import EbayProvider
+from app.providers.http import ProviderFailure, ProviderHTTP
+from app.providers.models import ProviderResult, Provenance, unavailable
+
+
+class NoInventory:
+    def transaction(self):
+        return nullcontext()
+
+
+class ProviderDomainEngine(DomainEngine):
+    def __init__(self, settings, http=None):
+        self.inventory = NoInventory()
+        self.http = http or ProviderHTTP(timeout=settings.provider_timeout_seconds,
+            retries=settings.provider_retries, ttl=settings.provider_cache_ttl)
+        if settings.shopping_provider not in {"birmarket", "ebay"}:
+            raise ValueError("SHOPPING_PROVIDER must be birmarket or ebay")
+        flights = AviasalesProvider(self.http, settings.travelpayouts_token, settings.flight_currency, settings.flight_market)
+        shopping = BirmarketProvider() if settings.shopping_provider == "birmarket" else EbayProvider(
+            self.http, settings.ebay_token, settings.ebay_marketplace)
+        cinema = TMDBProvider(self.http, settings.tmdb_token) if settings.tmdb_token else CinemaPlusProvider()
+        self.services = {domain: ProviderService(domain, provider) for domain, provider in
+                         (("flights", flights), ("shopping", shopping), ("cinema", cinema))}
+
+
+class ProviderService:
+    def __init__(self, domain, provider):
+        self.domain, self.provider = domain, provider
+
+    def execute(self, intent, state):
+        return asyncio.run(self.run(intent, state))
+
+    async def run(self, intent, state):
+        ctx = getattr(state, self.domain)
+        p, delta, action = ctx.parameters, intent.parameters, intent.intent
+        key = {"flights": "flights", "shopping": "products", "cinema": "movies"}[self.domain]
+        ids_field = {"flights": "flight_ids", "shopping": "product_ids", "cinema": "movie_ids"}[self.domain]
+        if action == "follow_up":
+            action = "details" if getattr(delta, ids_field) or delta.reference or delta.result_positions else "search"
+        # An API for cached fares/metadata grants no booking, inventory or cart authority.
+        if action in {"reserve", "availability", "cart_add", "cart_remove", "cart_view"}:
+            if self.domain == "cinema":
+                response = await CinemaPlusProvider().search(p)
+            elif self.domain == "shopping" and isinstance(self.provider, BirmarketProvider):
+                response = self.provider.authorization_required()
+            else:
+                response = unavailable(self.provider.name, "https://www.aviasales.com/" if self.domain == "flights" else "https://www.ebay.com/",
+                    "This provider cannot verify availability or perform reservations, purchases or cart operations.", "unsupported_operation")
+            return self.outcome(action, key, response)
+        if action not in {"search", "filter", "sort", "resume", "details", "compare"}:
+            raise DomainIssue("unsupported_operation", status="error")
+        if isinstance(self.provider, (BirmarketProvider, CinemaPlusProvider)):
+            response = await self.provider.search(p)
+            ctx.provider_snapshot = response.model_dump(mode="json")
+            ctx.last_result_ids, ctx.selected_ids, ctx.pending = [], [], None
+            return self.outcome(action, key, response)
+        if action in {"details", "compare"} or action == "resume" and ctx.selected_ids:
+            saved = ctx.provider_snapshot
+            ids = getattr(delta, ids_field)
+            rows = saved.get("items", [])
+            known = {r["id"]: r for r in rows}
+            if delta.result_positions:
+                if any(i < 1 or i > len(ctx.last_result_ids) for i in delta.result_positions):
+                    raise DomainIssue("invalid_selection")
+                ids = [ctx.last_result_ids[i - 1] for i in delta.result_positions]
+            if not ids and delta.reference:
+                reference = delta.reference.casefold()
+                if reference in {"it", "that", "this", "the one"}:
+                    ids = ctx.selected_ids or (ctx.last_result_ids if len(ctx.last_result_ids) == 1 else [])
+                elif reference in {"the cheaper one", "the cheapest one"}:
+                    priced = [r for r in rows if r.get("price")]
+                    currencies = {r["price"]["currency"] for r in priced}
+                    if len(currencies) != 1:
+                        raise DomainIssue("choose_item")
+                    from decimal import Decimal
+                    cheapest = min((Decimal(r["price"]["amount"]) for r in priced), default=None)
+                    ids = [r["id"] for r in priced if Decimal(r["price"]["amount"]) == cheapest]
+                    if len(ids) != 1:
+                        raise DomainIssue("choose_item")
+                else:
+                    raise DomainIssue("choose_item")
+            ids = list(dict.fromkeys(ids or (ctx.last_result_ids if action == "compare" else ctx.selected_ids)))
+            if not ids:
+                # Named movie details can start with a metadata search.
+                if self.domain == "cinema" and p.movie_title:
+                    action = "search"
+                else:
+                    raise DomainIssue("compare_items" if action == "compare" else "choose_item")
+            else:
+                if action == "compare" and len(ids) < 2:
+                    raise DomainIssue("compare_items")
+                if any(identifier not in known for identifier in ids):
+                    raise DomainIssue("unknown_id")
+                source = Provenance.model_validate(saved["source"])
+                source.status, source.local_cache_hit = "cached", True
+                selected = [known[i] for i in ids]
+                if self.domain == "flights":
+                    try:
+                        await self.validate_flight_selection(selected, delta)
+                    except ProviderFailure as exc:
+                        return self.outcome(action, key, unavailable(self.provider.name, source.source_url,
+                            "Cannot validate the selected route. Please supply an explicit IATA code.", exc.code, exc.retry_after))
+                if self.domain == "cinema" and isinstance(self.provider, TMDBProvider) and action != "compare":
+                    # Details fetches runtime/genres from the official metadata endpoint.
+                    responses = [await self.provider.details(i) for i in ids]
+                    failure = next((r for r in responses if r.error), None)
+                    if failure is not None:
+                        return self.outcome(action, key, failure)
+                    selected = [r.items[0].model_dump(mode="json") for r in responses]
+                    source = responses[0].source
+                ctx.selected_ids = ids
+                return self.outcome(action, key, ProviderResult(source=source, items=selected, partial=True))
+        if self.domain == "flights":
+            missing = [name for name in ("origin", "destination", "departure_date") if getattr(p, name) is None]
+            if missing:
+                raise DomainIssue("flight_search", missing=missing)
+        response = await self.provider.search(p)
+        # Replace selection context even after a failed/empty new search to avoid stale actions.
+        ctx.provider_snapshot = response.model_dump(mode="json")
+        ctx.last_result_ids = [r.id for r in response.items]
+        ctx.selected_ids, ctx.pending = [], None
+        return self.outcome(action, key, response)
+
+    async def validate_flight_selection(self, rows, delta):
+        """A follow-up cannot apply new constraints while silently returning an old fare."""
+        from datetime import datetime
+        from decimal import Decimal
+        locations = {field: await self.provider.resolve_iata(getattr(delta, field))
+                     for field in ("origin", "destination") if getattr(delta, field)}
+        for row in rows:
+            if any(value not in {row[field], row.get(field + "_airport")} for field, value in locations.items()):
+                raise DomainIssue("selection_mismatch")
+            if delta.baggage_kg is not None or delta.cabin:
+                raise DomainIssue("unsupported_filter", status="error")
+            if delta.currency and delta.currency.upper() != row["price"]["currency"]:
+                raise DomainIssue("selection_mismatch")
+            if (delta.min_price_azn is not None or delta.max_price_azn is not None) and row["price"]["currency"] != "AZN":
+                raise DomainIssue("currency_filter_mismatch", status="error")
+            if (delta.departure_date and datetime.fromisoformat(row["departure_at"]).date() != delta.departure_date
+                or delta.return_date and (not row.get("return_at") or datetime.fromisoformat(row["return_at"]).date() != delta.return_date)
+                or delta.stops is not None and row.get("stops") != delta.stops
+                or delta.airline and (row.get("airline") or "").casefold() != delta.airline.casefold()
+                or delta.min_price_azn is not None and Decimal(row["price"]["amount"]) < Decimal(str(delta.min_price_azn))
+                or delta.max_price_azn is not None and Decimal(row["price"]["amount"]) > Decimal(str(delta.max_price_azn))):
+                raise DomainIssue("selection_mismatch")
+
+    def outcome(self, action, key, response):
+        serialized = response.model_dump(mode="json")
+        data = {key: serialized["items"], "provider": serialized["source"], "partial": response.partial}
+        if response.error:
+            data["provider_error"] = serialized["error"]
+        if self.domain == "cinema":
+            data.update(showtimes=[], cinemas=[], screening_status="unavailable")
+        return DomainResult(domain=self.domain, operation=action,
+            status="error" if response.error else "ok" if response.items else "no_results",
+            code=response.error.code if response.error else "results", data=data)
