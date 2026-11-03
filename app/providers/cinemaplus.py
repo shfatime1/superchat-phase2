@@ -146,7 +146,8 @@ class CinemaPlusPublicProvider:
             if not film_url or "/films/" not in film_url or not cinema_url:
                 continue
             try:
-                day = datetime.strptime(tr["data-date"], "%d.%m.%Y").date()
+                raw_day = tr["data-date"].strip()
+                day = date.fromisoformat(raw_day) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw_day) else datetime.strptime(raw_day, "%d.%m.%Y").date()
                 clock = datetime.strptime(text(cols[1]), "%H:%M").strftime("%H:%M")
             except ValueError:
                 continue  # No guessed dates or times for malformed rows.
@@ -194,14 +195,17 @@ class CinemaPlusPublicProvider:
                     page = await self.pages.read(matches[0].source_url)
                     documents.append(page)
                     showtimes, scheduled, locations = self.parse_showtimes(page.data, matches[0].source_url)
-                    titles = {m.id for m in movies}
-                    showtimes = [s for s in showtimes if s.movie_id in titles]
-                    movies = [m for m in movies if any(s.movie_id == m.id for s in showtimes)]
+                    # A branch's published future films need not appear in today's
+                    # homepage list. Keep verified schedule records for that date.
+                    home_movies = {m.id: m for m in movies}
+                    movies = [home_movies.get(m.id, m) for m in scheduled]
+                    if p.movie_title:
+                        movies = [m for m in movies if p.movie_title.casefold() in m.title.casefold()]
                 else:
                     movies, locations = [], []
             elif p.movie_title or p.date or p.time or p.max_price_azn is not None or p.genre or p.language:
                 # Bound public page reads. A named movie/cinema gives a focused complete source page.
-                limited = movies[:3]
+                limited = movies[:6 if p.date else 3]
                 for movie in limited:
                     page = await self.pages.read(movie.movie_url)
                     documents.append(page)
@@ -215,7 +219,8 @@ class CinemaPlusPublicProvider:
                 documents.append(about)
                 locations = self.parse_locations(about.data)
             if p.genre:
-                movies = [m for m in movies if any(p.genre.casefold() in g.casefold() for g in m.genre)]
+                canonical = lambda value: value.casefold().replace("science fiction", "sci-fi")
+                movies = [m for m in movies if any(canonical(p.genre) in canonical(g) for g in m.genre)]
             if p.language:
                 requested = {"english": "eng", "russian": "rus", "azerbaijani": "aze", "turkish": "tur",
                              "en": "eng", "ru": "rus", "az": "aze", "tr": "tur"}.get(p.language.casefold(), p.language.casefold())

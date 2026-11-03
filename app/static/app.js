@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 const input = $("message-input"), messages = $("messages"), scrollArea = $("scroll-area");
 let conversations = [], activeId = null, storageKey = null, busy = false, ready = false;
 let liveTurn = null, debugTrigger = null;
+let mediaBusy = false;
 const names = {flights: "Flights", shopping: "Shopping", cinema: "Cinema"};
 const money = value => Number(value).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 function node(tag, className, text) {
@@ -18,7 +19,7 @@ function node(tag, className, text) {
 function button(text, action, className = "small-button") {
   const element = node("button", className, text);
   element.type = "button";
-  element.disabled = busy;
+  element.disabled = busy || mediaBusy;
   element.addEventListener("click", action);
   return element;
 }
@@ -40,14 +41,16 @@ function showError(text, retry) {
 }
 function setBusy(value) {
   busy = value;
+  const locked = value || mediaBusy;
   $("loading").hidden = !value || !!liveTurn;
-  input.disabled = value || !!current()?.archived || !ready;
-  $("send-button").disabled = value || !input.value.trim() || !!current()?.archived || !ready;
-  document.querySelectorAll(".suggestion,.mixed-prompt,.new-chat,.conversation-button,[data-assistant]").forEach(element => { element.disabled = value || !ready; });
+  input.disabled = locked || !!current()?.archived || !ready;
+  $("send-button").disabled = locked || !input.value.trim() || !!current()?.archived || !ready;
+  document.querySelectorAll(".suggestion,.mixed-prompt,.new-chat,.conversation-button,[data-assistant]").forEach(element => { element.disabled = locked || !ready; });
   document.querySelectorAll(".card-actions button,.card-actions input,.result-heading button,.cart-line button,.carousel-controls button").forEach(element => {
-    element.disabled = value || !ready || !!current()?.archived || element.dataset.unavailable === "true";
+    element.disabled = locked || !ready || !!current()?.archived || element.dataset.unavailable === "true";
   });
-  $("clear-history").disabled = value;
+  $("clear-history").disabled = locked;
+  window.SuperChatBonuses?.setAvailability(ready && !busy && !current()?.archived && !current()?.pending);
   document.querySelectorAll("#error button").forEach(element => { element.disabled = value; });
   $("chat-form").setAttribute("aria-busy", String(value));
 }
@@ -56,7 +59,7 @@ function closeSidebar() {
   $("menu-button").setAttribute("aria-expanded", "false");
 }
 function newConversation() {
-  if (busy || !ready) return;
+  if (busy || mediaBusy || !ready) return;
   const existing = conversations.find(chat => !chat.turns.length && !chat.archived);
   if (existing) activeId = existing.id;
   else {
@@ -80,7 +83,7 @@ function renderSidebar() {
   });
 }
 async function selectConversation(id) {
-  if (busy) return;
+  if (busy || mediaBusy) return;
   activeId = id; clearError(); showNotice(""); save(); render(); closeSidebar();
   await restoreSession();
 }
@@ -417,6 +420,7 @@ function syncConnection(routing) {
 }
 function render() {
   const chat = current(); renderSidebar(); messages.replaceChildren();
+  window.SuperChatBonuses?.contextChanged(activeId);
   const lastReply = [...(chat?.turns || [])].reverse().find(turn => turn.routing?.domains?.length === 1);
   window.SuperChatUI.syncDomain(chat?.domainHint || chat?.lastDomain || lastReply?.routing.domains[0] || "flights");
   syncConnection([...(chat?.turns || [])].reverse().find(turn => turn.routing?.intents?.length || turn.routing?.fallback_reason)?.routing);
@@ -448,8 +452,8 @@ async function restoreSession() {
     else if (activeId === targetId) showNotice("Saved messages are available. The server could not refresh this conversation yet.");
   }
 }
-async function send(text, retry = false) {
-  if (busy || !ready || current()?.archived) return;
+async function send(text, retry = false, languageOverride = null) {
+  if (busy || mediaBusy || !ready || current()?.archived) return;
   if (!current()) newConversation();
   const chat = current();
   if (chat.pending && !retry) { showError("Resolve the unconfirmed message first to avoid repeating an operation.", () => send(null, true)); return; }
@@ -458,7 +462,7 @@ async function send(text, retry = false) {
     text = (text ?? input.value).trim(); if (!text || text.length > 8000) return;
     chat.pending = {message: text, session_id: chat.sessionId, request_id: crypto.randomUUID()};
     if (chat.domainHint) chat.pending.domain_hint = chat.domainHint;
-    const language = window.SuperChatUI.requestLanguage || (generated ? chat.lastLanguage : null);
+    const language = window.SuperChatUI.requestLanguage || languageOverride || (generated ? chat.lastLanguage : null);
     if (language) chat.pending.language = language;
     chat.turns.push({role: "user", content: text});
     if (chat.title === "New conversation") chat.title = text.slice(0, 52);
@@ -497,7 +501,7 @@ async function send(text, retry = false) {
 }
 window.SuperChatUI.onDomainSelect = domain => {
   const chat = current();
-  if (!busy && chat) { chat.domainHint = domain; save(); }
+  if (!busy && !mediaBusy && chat) { chat.domainHint = domain; save(); }
 };
 $("chat-form").addEventListener("submit", event => { event.preventDefault(); send(); });
 input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 130) + "px"; setBusy(busy); });
@@ -512,7 +516,7 @@ document.addEventListener("keydown", event => { if (event.key === "Escape") clos
 $("close-debug").addEventListener("click", closeDebugger);
 document.addEventListener("keydown", event => { if (event.key === "Escape" && !$("debug-panel").hidden) closeDebugger(); });
 $("clear-history").addEventListener("click", () => {
-  if (busy || !confirm(window.SuperChatUI.translate("Clear saved conversations from this browser?"))) return;
+  if (busy || mediaBusy || !confirm(window.SuperChatUI.translate("Clear saved conversations from this browser?"))) return;
   conversations = []; activeId = null; clearError(); showNotice(""); save(); newConversation();
 });
 async function init() {
@@ -531,4 +535,18 @@ async function init() {
     await restoreSession(); input.focus();
   } catch { showError("SuperChat could not connect to the backend. Check that it is running, then reload this page.", () => location.reload()); }
 }
+window.SuperChatComposer = {
+  get available() { return ready && !busy && !mediaBusy && !current()?.archived && !current()?.pending; },
+  get context() { return {id: activeId, sessionId: current()?.sessionId}; },
+  lock(value) { mediaBusy = value; setBusy(busy); },
+  draft(text, id, language) {
+    if (id !== activeId || current()?.archived) return;
+    input.value = (input.value.trimEnd() + (input.value.trim() ? " " : "") + text).slice(0, 8000);
+    window.SuperChatUI.syncLanguage(language); input.dispatchEvent(new Event("input")); input.focus();
+  },
+  search(query, id) {
+    if (id !== activeId || !this.available) return;
+    return send("Show me products matching " + query, false, window.SuperChatUI.language);
+  }
+};
 init();

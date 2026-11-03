@@ -181,6 +181,7 @@ def product_search_query(message: str) -> str | None:
     if re.search(r"[^\x00-\x7f]", text):
         return None  # Preserve Gemini's normalized query for existing language support.
     text = re.sub(r"^(?:now|actually)[,\s]+", "", text)
+    text = re.sub(r"\s+please$", "", text)
     text = re.sub(r"^(?:start (?:a )?new search for|new search for)\s+", "", text)
     text = re.sub(
     r"^(?:please\s+)?(?:show(?:\s+me)?|find(?:\s+me)?|search\s+for|do\s+you\s+have|i\s+need|looking\s+for|i\s+want\s+to\s+buy|i\s+want\s+to\s+see|i\s+am\s+looking\s+for)\s+",
@@ -189,7 +190,7 @@ def product_search_query(message: str) -> str | None:
     without_budget = re.sub(r"\s+and\s*$", "", without_budget).strip()
     if without_budget != text and without_budget and re.search(r"\b(?:laptops?|headphones|earbuds|smartphones?|backpack|tablet|monitor|keyboard)\b", without_budget):
         text = without_budget
-    if re.match(r"^(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|with|only|same|also|cheaper|cheapest|price|any brand|make|keep|filter|sort|more|next page)\b", text):
+    if re.match(r"^(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|with|only|same|also|cheaper|cheapest|price|brand|category|color|any brand|make|keep|filter|sort|more|next page)\b", text):
         return None  # A budget-only follow-up keeps the saved product query.
     if re.fullmatch(r"(?:" + CODES + r")(?:\s+please)?", text):
         return None
@@ -366,7 +367,7 @@ class GeminiRouter:
         # An explicit new subject cannot be replaced by the previous active domain.
         # Reject before query normalization can turn unrelated words into filters.
         named = explicit_domains(message)
-        if len(named) == 1 and result.domains != [Domain(named[0])]:
+        if named and set(result.domains) != {Domain(d) for d in named}:
             raise InvalidRouterResponse("Routing ignored an explicit domain", "explicit_domain_mismatch")
         if (result.category == Category.FOLLOW_UP and named and
                 any(getattr(state, d.value).intent is None for d in result.domains)):

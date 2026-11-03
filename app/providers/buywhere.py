@@ -99,7 +99,7 @@ class BuyWhereProvider:
     def failure(self, code, retry_after=None):
         messages = {
             "query_required": "Enter a product name, category or brand to search the BuyWhere catalog.",
-            "unsupported_filter": "BuyWhere public search does not verify stock or color filters.",
+            "unsupported_filter": "BuyWhere public search cannot verify stock availability. Colour matching uses explicit catalog text only.",
             "currency_filter_mismatch": f"Use a native {MARKETS[self.market]} budget for this catalog; AZN conversion is unavailable.",
             "currency_required": "Specify a single native currency for price budgets or sorting, for example USD.",
             "invalid_range": "The minimum price must not exceed the maximum price.",
@@ -114,7 +114,7 @@ class BuyWhereProvider:
         query = p.query or p.category or p.brand
         if not query or not query.strip():
             return self.failure("query_required")
-        if p.in_stock is not None or p.color:
+        if p.in_stock is not None:
             return self.failure("unsupported_filter")
         if p.min_price_azn is not None or p.max_price_azn is not None:
             return self.failure("currency_filter_mismatch")
@@ -128,7 +128,7 @@ class BuyWhereProvider:
         if p.sort_by and p.sort_by not in {"price_asc", "price_desc"}:
             return self.failure("invalid_sort")
         terms = [query.strip()]
-        for refinement in (p.category, p.brand):
+        for refinement in (p.category, p.brand, p.color):
             if refinement and refinement.casefold() not in " ".join(terms).casefold():
                 terms.append(refinement)
         params = {"q": " ".join(terms), "country_code": self.market, "deliver_to": self.market,
@@ -171,7 +171,11 @@ class BuyWhereProvider:
                     (p.min_price is None or r.price.amount >= Decimal(str(p.min_price))) and
                     (p.max_price is None or r.price.amount <= Decimal(str(p.max_price)))]
             if p.brand:
-                rows = [r for r in rows if not r.brand or r.brand.casefold() == p.brand.casefold()]
+                rows = [r for r in rows if (r.brand and r.brand.casefold() == p.brand.casefold()) or
+                        re.search(r"\b" + re.escape(p.brand) + r"\b", r.title, re.I)]
+            if p.color:
+                rows = [r for r in rows if (r.color and r.color.casefold() == p.color.casefold()) or
+                        re.search(r"\b" + re.escape(p.color) + r"\b", r.title, re.I)]
             if p.sort_by:
                 known = [r for r in rows if r.price]
                 if len({r.price.currency for r in known}) > 1:

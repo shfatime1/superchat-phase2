@@ -15,7 +15,7 @@ def requested_language(message):
     text = message.casefold().strip(" .!?")
     choices = {"az": r"azərbaycanca|azerbaycanca|azerbaijani|azərbaycan dilində|az dilində",
                "ru": r"по-русски|на русском|русский|russian|rusca|rus dilində",
-               "en": r"in english|english|ingiliscə|ingilis dilində|на английском"}
+               "en": r"in english|english|ingiliscə|ingilisce|ingilis dilində|ingilis dilinde|на английском"}
     for language, expression in choices.items():
         if re.fullmatch(r"(?:please\s+)?(?:" + expression + r")(?:\s+please)?", text) or (
             re.search(r"\b(answer|respond|reply|speak|отвечай|ответь|говори|cavab|danış|yaz)\b", text)
@@ -28,7 +28,7 @@ def language_only(message):
     text = message.casefold().strip(" .!?")
     patterns = [r"(?:please\s+)?(?:(?:answer|respond|reply|speak)(?:\s+to me)?\s+)?(?:in\s+)?(?:english|russian|azerbaijani)(?:\s+please)?",
                 r"(?:пожалуйста\s+)?(?:(?:отвечай|ответь|говори)\s+)?(?:по-русски|(?:на\s+)?(?:русском|английском|азербайджанском))(?:\s+языке)?",
-                r"(?:(?:mənə|mene)\s+)?(?:azərbaycanca|rusca|ingiliscə|(?:azərbaycan|rus|ingilis)\s+dilində)(?:\s+(?:cavab ver|danış|yaz))?"]
+                r"(?:(?:mənə|mene)\s+)?(?:azərbaycanca|azerbaycanca|rusca|ingiliscə|ingilisce|(?:azərbaycan|azerbaycan|rus|ingilis)\s+dilind[əe])(?:\s+(?:cavab ver|danış|yaz))?"]
     return bool(requested_language(message) and any(re.fullmatch(pattern, text) for pattern in patterns))
 
 
@@ -36,6 +36,8 @@ def detect_language(message, previous=None):
     if requested_language(message):
         return requested_language(message)
     text = message.casefold()
+    if re.search(r"\b(?:mene|lazimdi|lazimdir|qulaqciq\w*|qulaqcig\w*)\b", text):
+        return "az"
     # Grammar signals beat borrowed product names and city names.
     az = len(re.findall(r"\b(?:göstər|goster|ucuz|ucuş\w*|uçuş\w*|sabah|bu gün|bugün|bu gun|dan|daha|notebooklar|noutbuk\w*|qulaqlıq\w*|qulaqliq\w*|filmlər|filmler|seans\w*|birinci|ikinci|müqayisə|muqayise|zəhmət|zehmet)\b", text))
     ru = len(re.findall(r"\b(?:покажи\w*|найди|рейс\w*|авиабилет\w*|ноутбук\w*|дешевле|дороже|сегодня|завтра|фильм\w*|сеанс\w*|перв\w*|втор\w*|сравни\w*|только|до|из|наушник\w*)\b", text))
@@ -56,6 +58,17 @@ def detect_language(message, previous=None):
 # Long phrases are replaced before individual words. This is the conservative
 # outage grammar; Gemini still receives the original multilingual request.
 PHRASES = {
+    r"(?:mənə|mene)\s+(.+?)\s+(?:lazımdır|lazimdi|lazimdir|lazımdı)": r"i need \1",
+    r"qulaqcıq(?:lar)?|qulaqciq(?:lar)?|qulaqcig(?:lar)?": "headphones",
+    r"elmi fantastika|elmi-fantastik|fantastika|научная фантастика|фантастик[аи]": "sci-fi",
+    r"komediya|комеди[яию]": "comedy",
+    r"reytinq|рейтинг(?:ом)?": "rating",
+    r"rəng|reng|цвет(?:а)?": "color",
+    r"marka|бренд(?:а)?": "brand",
+    r"səbət|sebet|корзин[ауы]": "cart",
+    r"çıxar|cixar|удали": "remove",
+    r"hava necədir|hava necedir|погод[ауы]": "weather",
+    r"nəsə yaxşı|nese yaxsi|что-нибудь хорошее": "something good",
     r"daha çox məhsul|daha cox mehsul|növbəti səhifə|novbeti sehife|ещё товары|еще товары|следующая страница": "more products",
     r"qiyməti artan|qiymeti artan|əvvəl ucuz|evvel ucuz|от дешевых к дорогим|сначала дешевые": "cheapest first",
     r"qiyməti azalan|qiymeti azalan|сначала дорогие": "most expensive first",
@@ -155,6 +168,7 @@ def normalize_text(message):
     for pattern, value in PHRASES.items():
         text = re.sub(r"(?<!\w)(?:" + pattern + r")(?!\w)", value, text, flags=re.I)
     text = re.sub(r"\b(?:mənə|mene|мне)\b", "", text)
+    text = re.sub(r"\b(?:lazimdi|lazimdir|lazımdır|lazımdı)\b", "", text)
     text = re.sub(r"\b(?:is\s+)?(?:price|priced|costs?)\s+(?=under|below|above|over)", "", text)
     text = re.sub(r"\s+show me[.!?]*$", "", text)
     text = text.casefold()

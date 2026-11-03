@@ -59,7 +59,7 @@ class ChatService:
                     routing_state = state.model_copy(deep=False)
                     routing_state.last_active_domain = hint
                 routing = self.router.route(message, routing_state)
-                if hint and routing.domains != [hint] and hasattr(self.router, "local"):
+                if hint and routing.intents and routing.domains != [hint] and hasattr(self.router, "local"):
                     routing = self.router.local.route(message, routing_state)
                     routing.fallback_reason = "selected_domain_mismatch"
                 # Route EVERY new turn. Only provider data is cached for 30 minutes.

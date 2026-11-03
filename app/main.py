@@ -7,12 +7,14 @@ from threading import Thread, BoundedSemaphore
 from collections import defaultdict, deque
 from queue import Queue, Empty
 from time import monotonic
+import asyncio
 import json
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from app.chat import ChatResponse, ChatService
 from app.config import PROJECT_ROOT, Settings
@@ -25,6 +27,7 @@ from app.routing import GeminiRouter, InvalidRouterResponse, Router, RouterUnava
 from app.schemas import ChatRequest
 from app.state import SessionNotFound, SessionState, SessionStore
 from app.diagnostics import RequestTimeout, configure_logging
+from app.media import GeminiMedia, MediaFailure, validate_media, IMAGE_LIMIT, AUDIO_LIMIT
 
 
 def create_app(settings: Settings | None = None, router: Router | None = None) -> FastAPI:
@@ -37,6 +40,8 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
     guard = RLock()
     rate_windows = defaultdict(deque)
     streaming_slots = BoundedSemaphore(8)
+    media_slots = BoundedSemaphore(4)
+    media = GeminiMedia(settings)
 
     def check_rate(request):
         now = monotonic()
@@ -104,7 +109,53 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
                 "routing_mode": settings.routing_mode, "reference_date": settings.reference_date().isoformat(),
                 "data_mode": settings.data_mode,
                 "gemini_configured": bool(settings.api_key),
+                "media_enabled": bool(settings.api_key),
                 "routing_status": service.router.status() if isinstance(service.router, ResilientRouter) else "custom"}
+
+    async def process_media(request, kind, session_id):
+        if session_id is not None and owners.get(session_id) != request.state.owner:
+            raise HTTPException(404, "Session not found")
+        # Same-origin browser uploads; session cookies and existing rate limits apply.
+        from urllib.parse import urlsplit
+        origin = request.headers.get("origin")
+        if origin and urlsplit(origin).netloc != request.headers.get("host"):
+            raise HTTPException(403, "Cross-origin uploads are not allowed")
+        check_rate(request)
+        if not media_slots.acquire(blocking=False):
+            raise HTTPException(429, "media_rate_limited", headers={"Retry-After": "5"})
+        try:
+            if kind == "image" and settings.shopping_provider not in {"auto", "buywhere"}:
+                raise MediaFailure(409, "visual_requires_buywhere")
+            limit = IMAGE_LIMIT if kind == "image" else AUDIO_LIMIT
+            mime = request.headers.get("content-type", "").split(";", 1)[0].lower().strip()
+            async def read():
+                data = bytearray()
+                async for chunk in request.stream():
+                    if len(data) + len(chunk) > limit:
+                        raise MediaFailure(413, "media_too_large")
+                    data.extend(chunk)
+                return bytes(data)
+            data = await asyncio.wait_for(read(), 10)
+            validate_media(data, mime, kind)
+            method = media.identify if kind == "image" else media.transcribe
+            try:
+                return await asyncio.wait_for(run_in_threadpool(method, data, mime), 25)
+            except asyncio.TimeoutError:
+                raise MediaFailure(504, "media_timeout") from None
+        except asyncio.TimeoutError:
+            raise HTTPException(408, "media_upload_timeout") from None
+        except MediaFailure as exc:
+            raise HTTPException(exc.status, exc.code, headers={"Retry-After": "30"} if exc.status == 429 else None) from None
+        finally:
+            media_slots.release()
+
+    @application.post("/api/shopping/visual")
+    async def visual_search(request: Request, session_id: UUID | None = None):
+        return await process_media(request, "image", session_id)
+
+    @application.post("/api/media/transcribe")
+    async def transcribe(request: Request, session_id: UUID | None = None):
+        return await process_media(request, "audio", session_id)
 
     @application.get("/health")
     def health():

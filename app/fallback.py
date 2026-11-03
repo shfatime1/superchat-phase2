@@ -71,9 +71,12 @@ class LocalRouter:
                                                   "domains": list(dict.fromkeys(i["domain"] for i in intents)), "intents": intents})
         contextual = False
         if not domains:
-            if re.search(r"\b(weather|president|politics|recipe|code|poem|football)\b", text):
+            if re.search(r"\b(weather|president|politics|recipe|code|poem|football|joke)\b", text):
                 return unresolved("out_of_scope")
+            if re.search(r"\b(something good|surprise me|anything)\b", text):
+                return unresolved()
             supported = re.search(r"\b(cheaper|cheapest|first|second|third|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|direct|compare|book|reserve|add|remove|under|details|available|any brand|next page|more results)\b", text)
+            supported = supported or re.search(r"\b(sort|price|rating|color|brand|above|below|over|black|white|blue|red|after|before|stops?|baggage|airline|both)\b|\b\d{1,2}:\d{2}\b", text)
             supported = supported or re.fullmatch(NUMBER + r"(?:\s+(?:please|seats|units))?\.?", text)
             supported = supported or re.fullmatch(r"(?:from )?(?:baku|istanbul|dubai|moscow|tbilisi|tashkent|gyd|ist|dxb|svo|tbs|tas)\.?", text)
             if not state.last_active_domain or not supported:
@@ -114,6 +117,8 @@ class LocalRouter:
             action = "details"
         if re.search(r"\b(compare|comparison)\b", text):
             action = "compare"
+            if re.search(r"\b(both|all|them)\b", text):
+                p["reference"] = "all"
         elif domain == "shopping" and "cart" in text and not re.search(r"\b(add|remove)\b", text):
             action = "cart_view"
         elif re.search(r"\badd\b", text):
@@ -165,7 +170,7 @@ class LocalRouter:
                 return None
             p[{"flights": "passengers", "shopping": "quantity", "cinema": "tickets"}[domain]] = value
         for word, position in (("first", 1), ("second", 2), ("third", 3), ("fourth", 4)):
-            if re.search(r"\b" + word + r"\s+(?:one|option|flight|product|movie|showtime)\b", text):
+            if re.search(r"\b" + word + r"\s+(?:one|option|flight|product|movie|showtime)\b", text) or action == "compare" and re.search(r"\b" + word + r"\b", text):
                 p.setdefault("result_positions", []).append(position)
         if re.search(r"\b(cheaper|cheapest) one\b", text):
             p["reference"] = "the cheaper one"
@@ -180,7 +185,7 @@ class LocalRouter:
         minimum = re.search(r"\b(?:over|above|at least|min(?:imum)?)\s+(\d+(?:\.\d+)?)", text)
         if minimum and domain != "cinema":
             p["min_price_azn"] = float(minimum[1])
-        if "cheapest first" in text or "price ascending" in text:
+        if "cheapest first" in text or "price ascending" in text or "sort by price" in text:
             p["sort_by"] = "price_asc"
         elif "most expensive first" in text or "price descending" in text:
             p["sort_by"] = "price_desc"
@@ -212,6 +217,25 @@ class LocalRouter:
                 p["stops"] = 0
             if "direct flights" in text:
                 action, p["stops"] = "search", 0
+            if re.search(r"\bis (?:it|that) direct\b", text):
+                p.pop("stops", None)  # A factual question is not a new direct-only filter.
+            for phrase, order in (("fewest stops", "stops_asc"), ("earliest departure", "departure_asc"),
+                                  ("latest departure", "departure_desc"), ("sort by airline", "airline_asc")):
+                if phrase in text:
+                    p["sort_by"] = order
+            stops = re.search(r"\b(\d+)\s+stops?\b", text)
+            if stops:
+                p["stops"] = int(stops[1])
+            for label, field in (("after", "departure_time_from"), ("before", "departure_time_to"), ("at", "departure_time")):
+                clock = re.search(r"\b" + label + r"\s+(\d{1,2}:\d{2})\b", text)
+                if clock:
+                    p[field] = clock[1].zfill(5)
+            baggage = re.search(r"\b(\d+)\s*kg\b", text)
+            if baggage and "baggage" in text:
+                p["baggage_kg"] = int(baggage[1])
+            airline = re.search(r"\bairline\s+([a-z0-9]{2})\b", text)
+            if airline:
+                p["airline"] = airline[1].upper()
             for row in self.repos.flights.list_all():
                 if row.airline.casefold() in text:
                     p["airline"] = row.airline
@@ -221,6 +245,13 @@ class LocalRouter:
             p, clear_parameters = normalize_shopping_money(text, p)
             if "any brand" in text:
                 clear_parameters.append("brand")
+            for field in ("brand", "category", "color"):
+                explicit = re.search(r"\b" + field + r"\s+([\w-]+)", text)
+                if explicit:
+                    p[field] = explicit[1]
+            for color in ("black", "white", "red", "blue", "green", "silver"):
+                if re.search(r"\b" + color + r"\b", text):
+                    p["color"] = color
             explicit_query = product_search_query(text) if action in {"search", "sort"} else None
             for term in PRODUCTS:
                 if term in text:
@@ -239,6 +270,15 @@ class LocalRouter:
             elif explicit_query == "":
                 p = {}
         else:
+            if re.search(r"\brat(?:ing|ed)\b", text):
+                p.pop("max_price_azn", None)
+            if "highest rated" in text or "rating descending" in text:
+                p["sort_by"] = "rating_desc"
+            elif "title ascending" in text:
+                p["sort_by"] = "title_asc"
+            for genre in ("sci-fi", "comedy", "horror", "drama", "action", "animation", "thriller"):
+                if re.search(r"\b" + re.escape(genre) + r"\b", text):
+                    p["genre"] = genre
             screening = re.search(r"\bin\s+(english|russian|azerbaijani)\b", text, re.I)
             if screening:
                 p["language"] = screening[1].title()

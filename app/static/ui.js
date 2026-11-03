@@ -3,6 +3,12 @@
 window.SuperChatUI = (() => {
   const key = "superchat.ui.preferences";
   const dictionary = Object.fromEntries([
+    ["Search by image", "Şəkillə axtar", "Поиск по фото"], ["Voice input", "Səslə daxil et", "Голосовой ввод"],
+    ["Stop recording", "Yazını dayandır", "Остановить запись"], ["Cancel", "Ləğv et", "Отмена"],
+    ["Product to search", "Axtarılacaq məhsul", "Товар для поиска"], ["Search products", "Məhsulları axtar", "Найти товары"],
+    ["AI confidence", "AI əminlik səviyyəsi", "Уверенность ИИ"],
+    ["Images and recordings are sent to Gemini for processing.", "Şəkillər və səs yazıları emal üçün Gemini-yə göndərilir.", "Изображения и записи отправляются в Gemini для обработки."],
+    ["Similar products; exact model and availability unverified.", "Oxşar məhsullar; dəqiq model və mövcudluq təsdiqlənməyib.", "Похожие товары; точная модель и наличие не подтверждены."],
     ["New chat", "Yeni söhbət", "Новый чат"], ["New conversation", "Yeni söhbət", "Новый чат"],
     ["Debugger", "Diaqnostika", "Диагностика"], ["Close debugger", "Diaqnostikanı bağla", "Закрыть диагностику"],
     ["Load more products", "Daha çox məhsul", "Загрузить ещё товары"],

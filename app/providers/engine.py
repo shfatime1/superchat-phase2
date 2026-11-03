@@ -12,6 +12,7 @@ from app.providers.cinema_service import CinemaProviderService
 from app.providers.ebay import EbayProvider
 from app.providers.http import ProviderFailure, ProviderHTTP, run_provider
 from app.providers.models import ProviderResult, Provenance, unavailable
+from app.providers.references import saved_ids
 
 
 class NoInventory:
@@ -81,30 +82,9 @@ class ProviderService:
             return self.outcome(action, key, response)
         if action in {"details", "compare"} or action == "resume" and ctx.selected_ids:
             saved = ctx.provider_snapshot
-            ids = getattr(delta, ids_field)
+            ids = saved_ids(ctx, getattr(delta, ids_field), delta.result_positions, delta.reference, action == "compare")
             rows = saved.get("items", [])
             known = {r["id"]: r for r in rows}
-            if delta.result_positions:
-                if any(i < 1 or i > len(ctx.last_result_ids) for i in delta.result_positions):
-                    raise DomainIssue("invalid_selection")
-                ids = [ctx.last_result_ids[i - 1] for i in delta.result_positions]
-            if not ids and delta.reference:
-                reference = delta.reference.casefold()
-                if reference in {"it", "that", "this", "the one"}:
-                    ids = ctx.selected_ids or (ctx.last_result_ids if len(ctx.last_result_ids) == 1 else [])
-                elif reference in {"the cheaper one", "the cheapest one"}:
-                    priced = [r for r in rows if r.get("price")]
-                    currencies = {r["price"]["currency"] for r in priced}
-                    if len(currencies) != 1:
-                        raise DomainIssue("choose_item")
-                    from decimal import Decimal
-                    cheapest = min((Decimal(r["price"]["amount"]) for r in priced), default=None)
-                    ids = [r["id"] for r in priced if Decimal(r["price"]["amount"]) == cheapest]
-                    if len(ids) != 1:
-                        raise DomainIssue("choose_item")
-                else:
-                    raise DomainIssue("choose_item")
-            ids = list(dict.fromkeys(ids or (ctx.last_result_ids if action == "compare" else ctx.selected_ids)))
             if not ids:
                 raise DomainIssue("compare_items" if action == "compare" else "choose_item")
             else:
@@ -132,6 +112,7 @@ class ProviderService:
                     selected = [r.items[0].model_dump(mode="json") for r in responses]
                     source = responses[0].source
                 ctx.selected_ids = ids
+                ctx.last_result_ids = ids.copy()
                 return self.outcome(action, key, ProviderResult(source=source, items=selected, partial=True))
         if self.domain == "flights":
             missing = [name for name in ("origin", "destination", "departure_date") if getattr(p, name) is None]

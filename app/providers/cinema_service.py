@@ -8,6 +8,7 @@ from app.providers.cinema import TMDBProvider
 from app.providers.cinemaplus import CinemaPlusPublicProvider, HOME
 from app.providers.models import Provenance, ProviderResult, unavailable
 from app.providers.http import ProviderFailure, run_provider
+from app.providers.references import saved_ids
 
 
 class CinemaProviderService:
@@ -44,17 +45,7 @@ class CinemaProviderService:
             raise DomainIssue("unsupported_operation", status="error")
         selected = None
         if action in {"details", "compare"} or action == "resume" and ctx.selected_ids:
-            ids = delta.movie_ids
-            if delta.result_positions:
-                if any(i < 1 or i > len(ctx.last_result_ids) for i in delta.result_positions):
-                    raise DomainIssue("invalid_selection")
-                ids = [ctx.last_result_ids[i - 1] for i in delta.result_positions]
-            if not ids and delta.reference:
-                if delta.reference.casefold() in {"it", "that", "this", "the one"}:
-                    ids = ctx.selected_ids or (ctx.last_result_ids if len(ctx.last_result_ids) == 1 else [])
-                else:
-                    raise DomainIssue("choose_item")
-            ids = list(dict.fromkeys(ids or (ctx.last_result_ids if action == "compare" else ctx.selected_ids)))
+            ids = saved_ids(ctx, delta.movie_ids, delta.result_positions, delta.reference, action == "compare")
             if not ids:
                 discovery = p.movie_title or action != "compare" and (p.date or p.time or p.cinema_name or p.cinema_ids)
                 if not discovery:
