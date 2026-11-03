@@ -196,3 +196,38 @@ def test_no_fallback_on_valid_empty_official_search():
     result = ProviderDomainEngine(Settings(tmdb_token="test"), http).execute(routing(movie_title="Missing movie"), SessionState())[0]
     assert result.status == "no_results" and result.data["provider"]["provider"] == "CinemaPlus Azerbaijan"
     assert not any(path.startswith("/3/") for path in paths)
+
+
+@pytest.mark.parametrize("parameters", [
+    {"cinema_name": "CinemaPlus"},
+    {"cinema_name": "CinemaPlus Azerbaijan", "movie_title": "all movies"},
+    {"movie_title": "all CinemaPlus movies"},
+])
+def test_chain_and_catalog_words_are_not_literal_title_or_branch_filters(parameters):
+    http, _ = client()
+    result = run(CinemaPlusPublicProvider(http).search(CinemaParameters(**parameters)))
+    assert result.error is None
+    assert [m.id for m in result.items] == ["CP-44", "CP-verity"]
+
+
+def test_today_showtimes_recovers_from_saved_chain_filter():
+    http, _ = client()
+    engine = ProviderDomainEngine(Settings(tmdb_token="test"), http)
+    state = SessionState()
+    state.cinema.parameters = CinemaParameters(cinema_name="CinemaPlus", movie_title="all movies")
+    result = engine.execute(routing("details", date="2026-11-03"), state)[0]
+    assert result.status == "ok"
+    assert len(result.data["showtimes"]) == 2
+    assert all(s["date"] == "2026-11-03" for s in result.data["showtimes"])
+    assert state.cinema.parameters.cinema_name is None
+    assert state.cinema.parameters.movie_title is None
+
+
+@pytest.mark.parametrize("parameters", [
+    {"cinema_name": "Unknown branch"}, {"movie_title": "Missing movie"},
+    {"movie_title": "44", "language": "English"},
+])
+def test_specific_constraints_still_return_genuine_empty_results(parameters):
+    http, _ = client()
+    result = run(CinemaPlusPublicProvider(http).search(CinemaParameters(**parameters)))
+    assert result.error is None and not result.items and not result.showtimes

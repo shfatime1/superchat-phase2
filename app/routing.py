@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app.config import REFERENCE_DATE, Settings
 from app.dates import resolve_date
+from app.cinema_queries import normalize_cinema_discovery
 from app.schemas import (Category, CinemaIntent, Domain, FlightIntent, RoutingResult,
                          ShoppingIntent)
 from app.state import SessionState
@@ -174,7 +175,12 @@ class GeminiRouter:
                 "TMDB is a secondary metadata source, never confirmed CinemaPlus screenings.")
             instruction += (" For shopping budgets in explicit non-AZN currency, use currency plus min_price/max_price. "
                 "Keep min_price_azn/max_price_azn for AZN budgets. Do not convert currencies. "
-                "For CinemaPlus searches extract movie_title, cinema_name and date; do not infer screening data.")
+                "For CinemaPlus searches extract movie_title, cinema_name and date; do not infer screening data. "
+                "CinemaPlus/CineMastercard names the chain, not a cinema_name branch or movie_title. "
+                "'Show me all CinemaPlus movies' is an unfiltered search with reset_context=true and empty parameters. "
+                "For today's showtimes use search and date_text=today; no movie selection is required. "
+                "Cinema parameters.language is only an explicitly requested screening language; never copy "
+                "the conversation/response language into it.")
         contents = json.dumps({"reference_date": base_date.isoformat(),
                                "context": context, "message": message}, ensure_ascii=False)
         try:
@@ -219,7 +225,8 @@ class GeminiRouter:
                             if value:
                                 query = re.sub(r"\b" + re.escape(value.casefold()) + r"\b", "", query)
                         intent.parameters.query = query.strip() or intent.parameters.query
-        return self._resolve_context(result, state, base_date)
+        result = self._resolve_context(result, state, base_date)
+        return normalize_cinema_discovery(message, result) if self.settings.data_mode != "fixtures" else result
 
     @staticmethod
     def _resolve_context(result: RoutingResult, state: SessionState, reference_date=None) -> RoutingResult:

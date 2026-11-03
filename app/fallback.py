@@ -12,6 +12,7 @@ from threading import Lock
 from pydantic import ValidationError
 
 from app.dates import resolve_date
+from app.cinema_queries import normalize_cinema_discovery
 from app.routing import GeminiRouter, InvalidRouterResponse, RouterUnavailable, product_search_query
 from app.schemas import RoutingResult
 
@@ -45,7 +46,7 @@ class LocalRouter:
 
     def route(self, message, state):
         try:
-            return self._route(message, state)
+            return normalize_cinema_discovery(message, self._route(message, state))
         except (ValidationError, ValueError):
             # An unsupported local extraction must never become an HTTP 500.
             return RoutingResult(category="ambiguous", source="local", language="en")

@@ -4,6 +4,7 @@ import asyncio
 
 from app.domain_models import DomainResult
 from app.domains.common import DomainIssue
+from app.cinema_queries import normalized_cinema_parameters
 from app.providers.cinema import TMDBProvider
 from app.providers.cinemaplus import CinemaPlusPublicProvider, HOME
 from app.providers.models import Provenance, ProviderResult, unavailable
@@ -21,7 +22,8 @@ class CinemaProviderService:
 
     async def run(self, intent, state):
         ctx, delta, action = state.cinema, intent.parameters, intent.intent
-        p = ctx.parameters
+        # Clean previously saved chain/catalog labels as well as fresh extraction.
+        p = ctx.parameters = normalized_cinema_parameters(ctx.parameters)
         if action == "follow_up":
             action = "details" if delta.movie_ids or delta.result_positions or delta.reference else "search"
         if action in {"reserve", "availability", "cart_add", "cart_remove", "cart_view"}:
@@ -46,7 +48,8 @@ class CinemaProviderService:
                     raise DomainIssue("choose_item")
             ids = list(dict.fromkeys(ids or (ctx.last_result_ids if action == "compare" else ctx.selected_ids)))
             if not ids:
-                if not p.movie_title:
+                discovery = p.movie_title or action != "compare" and (p.date or p.time or p.cinema_name or p.cinema_ids)
+                if not discovery:
                     raise DomainIssue("compare_items" if action == "compare" else "choose_item")
                 action = "search"
             else:
@@ -95,6 +98,7 @@ class CinemaProviderService:
     @staticmethod
     def filter_schedule(response, p):
         from decimal import Decimal
+        p = normalized_cinema_parameters(p)
         sessions = response.showtimes
         if p.date:
             sessions = [s for s in sessions if s.date == p.date]

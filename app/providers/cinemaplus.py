@@ -15,6 +15,7 @@ from app.providers.http import ProviderFailure
 from app.providers.models import MovieMetadata, Price, Provenance, ProviderResult, unavailable
 from app.providers.public_cinema_http import PublicCinemaPages, ROOT, public_url
 from app.schemas import Schema
+from app.cinema_queries import normalized_cinema_parameters
 
 HOME = ROOT + "/en/"
 ABOUT = HOME + "cinema/about-cinemaplus/"
@@ -168,6 +169,7 @@ class CinemaPlusPublicProvider:
         return list({r.id: r for r in rows}.values()), list(movies.values()), list(cinemas.values())
 
     async def search(self, p):
+        p = normalized_cinema_parameters(p)
         try:
             doc = await self.pages.read(HOME)
             movies = self.parse_movies(doc.data)
