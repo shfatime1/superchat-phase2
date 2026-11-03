@@ -66,6 +66,12 @@ class ProductOffer(Schema):
     image_url: str | None = None
     product_url: str | None = None
     category: str | None = None
+    category_id: str | None = None
+    brand: str | None = None
+    color: str | None = None
+    description: str | None = None
+    condition: str | None = None
+    availability_status: str | None = None
     in_stock: bool | None = None
 
 

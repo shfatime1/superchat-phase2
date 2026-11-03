@@ -1,27 +1,16 @@
-"""CinemaPlus Azerbaijan access boundary plus separately labeled TMDB metadata."""
+"""CinemaPlus public-page provider export and separately labeled TMDB metadata."""
 
 import re
 
 from app.providers.http import ProviderFailure
 from app.providers.models import MovieMetadata, Provenance, ProviderResult, unavailable
+from app.providers.cinemaplus import CinemaPlusPublicProvider as CinemaPlusProvider
 
 OFFICIAL = "https://cinemastercard.az/"
 TMDB = "https://api.themoviedb.org/3"
 NOTICE = ("TMDB movie metadata only. These are not confirmed CinemaPlus screenings. "
-          "CinemaPlus locations, current listings, showtimes, ticket prices and seat availability "
-          "require an authorized CinemaPlus data source. Check cinemastercard.az for tickets.")
-
-
-class CinemaPlusProvider:
-    name = "CinemaPlus Azerbaijan"
-    capabilities = {feature: False for feature in
-        ("currently_showing", "locations", "showtimes", "ticket_prices", "seats", "film_details")}
-
-    async def search(self, parameters):
-        return unavailable(self.name, OFFICIAL,
-            "No authorized public CinemaPlus Azerbaijan API has been verified. "
-            "Current movies, locations, showtimes, prices, seats and film details are unavailable in chat. "
-            "Use the official CinemaPlus / CineMastercard website.")
+          "Official CinemaPlus public listings are a separate source. This metadata result does not "
+          "verify showtimes, ticket prices or seat availability. Check cinemastercard.az for tickets.")
 
 
 class TMDBProvider:

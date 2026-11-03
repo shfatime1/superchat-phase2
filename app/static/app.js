@@ -218,6 +218,16 @@ function providerLink(label, href) {
     return link;
   } catch { return node("span", "", label); }
 }
+function providerImage(href, label) {
+  try {
+    const url = new URL(href);
+    if (url.protocol !== "https:" || url.username || url.password || !["image.tmdb.org", "i.ebayimg.com", "cinemastercard.az"].includes(url.hostname)) return null;
+    const img = node("img", "provider-image"); img.src = url.href; img.alt = label;
+    img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+    img.addEventListener("error", () => { img.hidden = true; });
+    return img;
+  } catch { return null; }
+}
 function renderProviderResult(result) {
   const data = result.data, source = data.provider;
   const section = node("section", "result-section");
@@ -237,6 +247,8 @@ function renderProviderResult(result) {
   rows.forEach(row => {
     const card = node("article", "result-card");
     card.append(node("div", "record-id", row.id));
+    const picture = providerImage(row.poster_url || row.image_url, row.title || "Provider image");
+    if (picture) card.append(picture);
     if (result.domain === "flights") {
       card.append(node("h3", "", `${row.origin} → ${row.destination}`),
         node("p", "card-subtitle", `${row.airline || "Airline unknown"} ${row.flight_number || ""}`),
@@ -247,15 +259,25 @@ function renderProviderResult(result) {
         node("p", "card-meta", "Seats, baggage and cabin: unknown"));
       if (row.booking_url) card.append(providerLink("Recheck on Aviasales", row.booking_url));
     } else if (result.domain === "shopping") {
-      card.append(node("h3", "", row.title), node("p", "card-meta", "Stock and delivery: unverified"));
+      const availability = row.in_stock === true ? "Provider reports estimated availability" : row.in_stock === false ? "Provider reports out of stock" : "Stock: unverified";
+      card.append(node("h3", "", row.title), node("p", "card-meta", availability + " · Delivery to Azerbaijan unverified"));
+      if (row.brand || row.color) card.append(node("p", "card-meta", [row.brand, row.color].filter(Boolean).join(" · ")));
+      if (row.category) card.append(node("p", "card-meta", row.category));
+      if (row.condition) card.append(node("p", "card-meta", row.condition));
+      if (row.description) card.append(node("p", "card-meta", row.description));
       if (row.product_url) card.append(providerLink("View on " + source.provider, row.product_url));
     } else {
-      card.append(node("h3", "", row.title), node("p", "card-meta", "TMDB metadata · CinemaPlus screening unverified"),
+      const official = !!row.movie_url;
+      const description = official ? (row.confirmed_cinemaplus_screening ? "Published CinemaPlus showtimes below" : "Listed on the official CinemaPlus site · Select for dated showtimes") : "TMDB metadata · CinemaPlus screening unverified";
+      card.append(node("h3", "", row.title), node("p", "card-meta", description),
         node("p", "card-meta", row.synopsis || ""));
       if (row.rating !== null) card.append(node("p", "card-meta", `${row.rating}/10 TMDB rating`));
       if (row.duration_min !== null) card.append(node("p", "card-meta", `${row.duration_min} min`));
       if (row.genre?.length) card.append(node("p", "card-meta", row.genre.join(", ")));
-      card.append(providerLink("Movie metadata on TMDB", row.metadata_url));
+      if (row.age_rating) card.append(node("p", "card-meta", row.age_rating));
+      if (row.screening_languages?.length) card.append(node("p", "card-meta", "Listed languages: " + row.screening_languages.join(", ")));
+      card.append(providerLink(official ? "Movie on CinemaPlus" : "Movie metadata on TMDB", row.movie_url || row.metadata_url));
+      if (official && row.showtimes_url) card.append(providerLink("Official showtimes", row.showtimes_url));
     }
     if (row.price) card.append(node("p", "price", `${money(row.price.amount)} ${row.price.currency}${result.domain === "flights" ? " · cached" : ""}`));
     const actions = node("div", "card-actions");
@@ -273,6 +295,23 @@ function renderProviderResult(result) {
     grid.append(card);
   });
   section.append(grid, providerLink("Open provider website", result.domain === "flights" ? "https://www.aviasales.com/" : source.source_url));
+  if (data.cinemas?.length) {
+    const places = node("div", "provider-locations"); places.append(node("h4", "", "CinemaPlus locations"));
+    data.cinemas.forEach(c => places.append(providerLink(c.name, c.source_url)));
+    section.append(places);
+  }
+  if (data.showtimes?.length) {
+    const list = node("div", "showtime-list");
+    data.showtimes.slice(0, 20).forEach(s => {
+      const row = node("article", "showtime-card"), info = node("div");
+      info.append(node("h4", "", `${s.movie_title} · ${s.date} ${s.time}`),
+        node("p", "card-meta", `${s.cinema_name} · ${s.hall || "Hall unspecified"}${s.language ? " · " + s.language : ""}`),
+        node("p", "card-meta", s.price ? `${money(s.price.amount)} ${s.price.currency} listed price · Seats unknown` : "Price and seats unverified"));
+      row.append(info, providerLink("Official schedule", s.showtimes_url)); list.append(row);
+    });
+    if (data.showtimes.length > 20) list.append(node("p", "card-meta", `Showing 20 of ${data.showtimes.length} published sessions. Open the official schedule for more.`));
+    section.append(list);
+  }
   if (result.domain === "cinema" && source.provider === "TMDB") section.append(providerLink("CinemaPlus listings and tickets", "https://cinemastercard.az/"));
   return section;
 }

@@ -37,11 +37,11 @@ def provider_response(request):
 
 
 @contextmanager
-def local_server():
+def local_server(settings=None, handler=provider_response):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    app = create_app(Settings(routing_mode="offline", travelpayouts_token="browser-test", tmdb_token="browser-test"))
+    app = create_app(settings or Settings(routing_mode="offline", travelpayouts_token="browser-test", tmdb_token="browser-test", cinema_provider="tmdb", shopping_provider="birmarket"))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
     thread = Thread(target=server.run, daemon=True)
     thread.start()
@@ -55,7 +55,7 @@ def local_server():
                 time.sleep(0.1)
         else:
             raise RuntimeError("Provider QA server failed to start")
-        app.state.chat_service.engine.http.transport = httpx.MockTransport(provider_response)
+        app.state.chat_service.engine.http.transport = httpx.MockTransport(handler)
         yield url
     finally:
         server.should_exit = True

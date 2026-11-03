@@ -1,8 +1,8 @@
 # SuperChat — Phase 2
 
 FastAPI chat with Gemini routing, conversation history and independent flight, shopping
-and cinema state. Production uses external provider adapters. No deployment has been
-performed. Bonus features remain out of scope.
+and cinema state. Production uses external provider adapters. The current Shopping/Cinema
+upgrade has not been pushed or deployed. Bonus features remain out of scope.
 
 ## Provider coverage
 
@@ -10,13 +10,14 @@ performed. Bonus features remain out of scope.
 | --- | --- | --- |
 | Aviasales / Travelpayouts | Official Data API fares by origin/destination/date, return date, IATA/city resolution, currency, supported filters, sorting and comparisons | Cached search prices, **not live quotes**. No seats, baggage, cabin, group inventory or reservations. |
 | Birmarket Azerbaijan | Provider adapter, capability/status reporting, official website handoff | Public catalog API access was not verified. Search, categories, details, prices, images and stock require authorized documentation/access. |
-| CinemaPlus Azerbaijan / CineMastercard | Official website handoff and screening capability reporting | No authorized public API was verified for current movies, cinemas, showtimes, prices, seats or film details. |
-| TMDB (optional) | Movie search/discovery and details, genres, ratings, runtime when provided, poster URLs | Metadata only; **never confirmed CinemaPlus screenings**. |
-| eBay (optional) | Official Browse API keyword search, provider price sorting, images/links and native currencies | Clearly labeled eBay, never Birmarket. Stock, delivery to Azerbaijan, taxes and checkout totals are unverified. Requires authorized production OAuth access. |
+| CinemaPlus Azerbaijan / CineMastercard | **Primary Cinema source:** movies, posters, official movie/schedule links, cinema names/links, dated public showtimes, halls and listed AZN prices; details include runtime, genre and age when published | Reads robots-permitted public HTML, not a documented API. No private endpoints, seat inventory or booking. No invented standalone session URLs. |
+| TMDB (secondary) | Metadata search/discovery/details when the official source fails or `CINEMA_PROVIDER=tmdb` is explicitly selected | Clearly labeled metadata; **never confirmed CinemaPlus screenings**. |
+| eBay (Shopping fallback) | Official Browse search/details, images/links, native-currency budgets, price sorting, category/brand/color refinements, reported item aspects and estimated availability when supplied | Always labeled eBay, never Birmarket. Requires authorized credentials and production API access. Delivery, taxes and checkout totals are unverified. |
 
 See [research and official sources](docs/provider_research.md) for the distinction between
-seller API access and public consumer catalog access. No undocumented endpoints or
-scraping are used. No results are fabricated.
+seller API access and public consumer catalog access. CinemaPlus uses a bounded public-page
+reader that honors robots rules and access restrictions. No undocumented private endpoints,
+login bypass or seat API calls are used. No results are fabricated.
 
 ## Run without a `.env` file
 
@@ -28,6 +29,9 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 $env:GEMINI_API_KEY = "your-gemini-key"
 $env:TRAVELPAYOUTS_API_TOKEN = "your-travelpayouts-token"
+# Real shopping (production eBay developer credentials):
+$env:EBAY_CLIENT_ID = "your-client-id"
+$env:EBAY_CLIENT_SECRET = "your-client-secret"
 # Optional movie metadata:
 $env:TMDB_READ_ACCESS_TOKEN = "your-tmdb-api-read-access-token"
 python -m app.serve
@@ -49,8 +53,10 @@ and are omitted from settings repr, responses and logs.
 | `FLIGHT_CURRENCY` | `AZN`; request `currency` overrides it; no invented exchange rates |
 | `FLIGHT_MARKET` | Optional documented market code; blank uses provider default |
 | `TMDB_READ_ACCESS_TOKEN` | Optional TMDB application Read Access Token, enabling metadata fallback |
-| `SHOPPING_PROVIDER` | `birmarket`; deliberately set `ebay` to select the separate alternative |
-| `EBAY_ACCESS_TOKEN` | Optional eBay production OAuth application access token; rotate/renew externally |
+| `CINEMA_PROVIDER` | `auto`: official CinemaPlus public pages first, TMDB only on source error if configured; `cinemaplus`: official pages only; `tmdb`: explicit metadata-only mode |
+| `SHOPPING_PROVIDER` | `auto` or `ebay`: the legitimate eBay fallback while public Birmarket catalog access remains unverified; `birmarket`: authorization-only adapter |
+| `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` | Recommended eBay application credentials; OAuth tokens are minted server-side, cached until expiry and renewed automatically |
+| `EBAY_ACCESS_TOKEN` | Optional pre-generated token, taking precedence over client credentials; its expiry must be managed externally |
 | `EBAY_MARKETPLACE` | `EBAY_US` |
 | `PROVIDER_TIMEOUT_SECONDS` | `8`, bounded to 0.1–30 seconds per HTTP phase |
 | `PROVIDER_RETRIES` | `2`, bounded to 0–3 retries for transport errors and selected transient HTTP statuses |
@@ -63,10 +69,10 @@ Local fallback supports a smaller set of English requests; Gemini handles richer
 extraction. Provider mode uses the current Asia/Baku date. Fixture mode retains the
 original 2026-11-02 reference date.
 
-## NEW Render Web Service
+## Update configuration for the existing Render service
 
-Create a new Python Web Service from this repository; do not reuse the Phase 1 service.
-`render.yaml` also provides a Blueprint configuration. No deployment is performed here.
+The Phase 2 service is already deployed. These local changes have not been deployed or
+pushed. When applying the upgrade, retain the working Gemini and Travelpayouts variables.
 
 1. Build: `pip install -r requirements.txt`.
 2. Start: `python -m app.serve`.
@@ -74,8 +80,14 @@ Create a new Python Web Service from this repository; do not reuse the Phase 1 s
 4. Set `GEMINI_API_KEY` and `TRAVELPAYOUTS_API_TOKEN` directly in Render Environment
    Variables, with `COOKIE_SECURE=true`, `SUPERCHAT_DATA_MODE=providers` and
    `SUPERCHAT_ROUTING_MODE=auto` (or `strict`).
-5. Optionally add `TMDB_READ_ACCESS_TOKEN`. Keep `SHOPPING_PROVIDER=birmarket` unless
-   deliberately enabling eBay with its own authorized token.
+5. Set `CINEMA_PROVIDER=auto`. CinemaPlus public listings require no API token.
+6. Change the existing `SHOPPING_PROVIDER=birmarket` variable to `auto` or `ebay` and add
+   `EBAY_CLIENT_ID` plus `EBAY_CLIENT_SECRET` with production Browse API access. Alternatively
+   use `EBAY_ACCESS_TOKEN`. Without valid credentials Shopping reports a precise setup error.
+7. Optionally retain/add `TMDB_READ_ACCESS_TOKEN` as the secondary metadata fallback.
+
+Changing local defaults or `render.yaml` does not update existing Render Environment Variables.
+No local `.env` file is required. `beautifulsoup4` is included in runtime dependencies.
 
 `GET /health` checks application initialization independently of optional credentials and
 external outages. `GET /api/providers` reports configuration/capabilities without external
@@ -107,11 +119,27 @@ flight. Unsupported baggage/cabin filters fail explicitly. AZN budgets cannot fi
 prices. Airline filters accept provider IATA codes. Time filters use the provider timestamp's
 clock time/offset. Passenger counts do not verify inventory or group totals.
 
-TMDB/eBay use `live` for fresh successful retrieval and `cached` for local cache hits. This
-does not imply live inventory. Movie discovery is generic TMDB discovery; date/location/ticket
-constraints cannot confirm CinemaPlus screenings. Comparisons/session details are labeled
-cached with original retrieval time. Explicit new searches replace selection snapshots even
-when empty/unavailable.
+CinemaPlus public pages, TMDB and eBay use `live` for fresh successful retrieval and `cached`
+for local cache hits. This describes retrieval, not inventory. CinemaPlus rows retain the
+actual published date/time and price. A homepage listing alone does not confirm a dated
+screening; only parsed showtime rows set `confirmed_cinemaplus_screening=true`.
+TMDB metadata always keeps that flag false and has no CinemaPlus showtimes.
+
+The public CinemaPlus reader fetches only the official `/en/`, observed film/cinema links,
+and `robots.txt`. It caches pages for up to 15 minutes and robots for an hour, spaces public
+requests by at least one second, bounds broad schedule searches to three film pages, rejects
+redirects/unknown paths, and stops on robots denial, 401/403, rate limits or unexpected markup.
+Movie/cinema selection yields a focused source page; broad searches remain explicitly partial.
+An empty valid official search is not replaced with generic TMDB movies. Street addresses are
+left unknown where the public contact block appears shared or cannot be reliably attributed.
+The HTML provides film/schedule links but no independently verified per-session booking URL;
+`direct_showtime_url` and `seats_available` remain null. Final prices and booking stay on the site.
+
+eBay supports `currency` + `min_price`/`max_price` for native-currency budgets (for example,
+"headphones under 50 USD"). AZN-specific budget fields are never applied to USD prices.
+Category/brand/color filters use eBay's documented refinements, not guessed IDs. Ignored-filter
+warnings become explicit errors. Search-time stock filtering is unsupported; details display
+estimated availability only when eBay supplies it. No quantity or delivery promise is inferred.
 
 No active provider path reads `data/*.json`. Original JSON and mock domain services remain
 only for explicit `SUPERCHAT_DATA_MODE=fixtures`. They are never an API failure fallback.
@@ -133,6 +161,14 @@ regression tests explicitly select fixture mode.
 Optional desktop/mobile browser QA: `python -m scripts.provider_browser_smoke` (requires
 Microsoft Edge and `requirements-dev.txt`). It uses local provider stubs and saves
 `docs/screenshots/phase2-*.png`; those screenshots illustrate UI behavior, not live results.
+
+`python -m scripts.catalog_browser_smoke` verifies the new CinemaPlus schedule and eBay
+image/details cards on desktop/mobile using contract stubs. Its `cinemaplus-*.png` and
+`shopping-*.png` screenshots illustrate layout, not live listings.
+
+Optional live read-only CinemaPlus verification:
+`python scripts/inspect_cinemaplus_public.py --verify-provider`. This reads robots-permitted
+public pages only. It needs network access but no API credentials. Automated tests remain offline.
 
 ## TMDB attribution
 

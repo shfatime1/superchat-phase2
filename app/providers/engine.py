@@ -8,7 +8,7 @@ from app.domains.common import DomainIssue
 from app.domains.engine import DomainEngine
 from app.providers.aviasales import AviasalesProvider
 from app.providers.birmarket import BirmarketProvider
-from app.providers.cinema import CinemaPlusProvider, TMDBProvider
+from app.providers.cinema_service import CinemaProviderService
 from app.providers.ebay import EbayProvider
 from app.providers.http import ProviderFailure, ProviderHTTP
 from app.providers.models import ProviderResult, Provenance, unavailable
@@ -24,14 +24,14 @@ class ProviderDomainEngine(DomainEngine):
         self.inventory = NoInventory()
         self.http = http or ProviderHTTP(timeout=settings.provider_timeout_seconds,
             retries=settings.provider_retries, ttl=settings.provider_cache_ttl)
-        if settings.shopping_provider not in {"birmarket", "ebay"}:
-            raise ValueError("SHOPPING_PROVIDER must be birmarket or ebay")
+        if settings.shopping_provider not in {"auto", "birmarket", "ebay"}:
+            raise ValueError("SHOPPING_PROVIDER must be auto, birmarket, or ebay")
         flights = AviasalesProvider(self.http, settings.travelpayouts_token, settings.flight_currency, settings.flight_market)
         shopping = BirmarketProvider() if settings.shopping_provider == "birmarket" else EbayProvider(
-            self.http, settings.ebay_token, settings.ebay_marketplace)
-        cinema = TMDBProvider(self.http, settings.tmdb_token) if settings.tmdb_token else CinemaPlusProvider()
+            self.http, settings.ebay_token, settings.ebay_marketplace, settings.ebay_client_id, settings.ebay_client_secret)
         self.services = {domain: ProviderService(domain, provider) for domain, provider in
-                         (("flights", flights), ("shopping", shopping), ("cinema", cinema))}
+                         (("flights", flights), ("shopping", shopping))}
+        self.services["cinema"] = CinemaProviderService(self.http, settings)
 
 
 class ProviderService:
@@ -50,9 +50,7 @@ class ProviderService:
             action = "details" if getattr(delta, ids_field) or delta.reference or delta.result_positions else "search"
         # An API for cached fares/metadata grants no booking, inventory or cart authority.
         if action in {"reserve", "availability", "cart_add", "cart_remove", "cart_view"}:
-            if self.domain == "cinema":
-                response = await CinemaPlusProvider().search(p)
-            elif self.domain == "shopping" and isinstance(self.provider, BirmarketProvider):
+            if self.domain == "shopping" and isinstance(self.provider, BirmarketProvider):
                 response = self.provider.authorization_required()
             else:
                 response = unavailable(self.provider.name, "https://www.aviasales.com/" if self.domain == "flights" else "https://www.ebay.com/",
@@ -60,7 +58,7 @@ class ProviderService:
             return self.outcome(action, key, response)
         if action not in {"search", "filter", "sort", "resume", "details", "compare"}:
             raise DomainIssue("unsupported_operation", status="error")
-        if isinstance(self.provider, (BirmarketProvider, CinemaPlusProvider)):
+        if isinstance(self.provider, BirmarketProvider):
             response = await self.provider.search(p)
             ctx.provider_snapshot = response.model_dump(mode="json")
             ctx.last_result_ids, ctx.selected_ids, ctx.pending = [], [], None
@@ -92,11 +90,7 @@ class ProviderService:
                     raise DomainIssue("choose_item")
             ids = list(dict.fromkeys(ids or (ctx.last_result_ids if action == "compare" else ctx.selected_ids)))
             if not ids:
-                # Named movie details can start with a metadata search.
-                if self.domain == "cinema" and p.movie_title:
-                    action = "search"
-                else:
-                    raise DomainIssue("compare_items" if action == "compare" else "choose_item")
+                raise DomainIssue("compare_items" if action == "compare" else "choose_item")
             else:
                 if action == "compare" and len(ids) < 2:
                     raise DomainIssue("compare_items")
@@ -111,8 +105,9 @@ class ProviderService:
                     except ProviderFailure as exc:
                         return self.outcome(action, key, unavailable(self.provider.name, source.source_url,
                             "Cannot validate the selected route. Please supply an explicit IATA code.", exc.code, exc.retry_after))
-                if self.domain == "cinema" and isinstance(self.provider, TMDBProvider) and action != "compare":
-                    # Details fetches runtime/genres from the official metadata endpoint.
+                if self.domain == "shopping" and isinstance(self.provider, EbayProvider) and action != "compare":
+                    if len(ids) > 4:
+                        raise DomainIssue("choose_item")
                     responses = [await self.provider.details(i) for i in ids]
                     failure = next((r for r in responses if r.error), None)
                     if failure is not None:

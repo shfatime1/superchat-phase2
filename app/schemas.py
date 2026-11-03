@@ -54,6 +54,9 @@ class FlightParameters(Schema):
 
 
 class ShoppingParameters(Schema):
+    currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
+    min_price: float | None = Field(default=None, ge=0)
+    max_price: float | None = Field(default=None, ge=0)
     query: str | None = None
     category: str | None = None
     brand: str | None = None

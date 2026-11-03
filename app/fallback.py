@@ -37,7 +37,7 @@ class LocalRouter:
             found.append("flights")
         if re.search(r"\b(shopping|birmarket|ebay|products?|cart|stock|p\d{3})\b", text) or any(word in text for word in PRODUCTS):
             found.append("shopping")
-        if re.search(r"\b(cinema\w*|tmdb-\d+|movies?|films?|showtimes?|tickets?|playing|[msc]\d{3}|sci-fi|comedy|horror)\b", text):
+        if re.search(r"\b(cinema\w*|tmdb-\d+|cp-[\w-]+|movies?|films?|showtimes?|tickets?|playing|[msc]\d{3}|sci-fi|comedy|horror)\b", text):
             found.append("cinema")
         if any(movie.title.casefold() in text for movie in self.repos.movies.list_all()) and "cinema" not in found:
             found.append("cinema")
@@ -102,10 +102,11 @@ class LocalRouter:
                 p[field] = values
         for pattern, field in ((r"\bav-[a-f0-9]{16}\b", "flight_ids"),
                                (r"\btmdb-\d+\b", "movie_ids"),
+                               (r"\bcp-[\w-]+\b", "movie_ids"),
                                (r"\bebay-v1\|\d+\|\d+\b", "product_ids")):
             matches = re.findall(pattern, text)
             if matches:
-                p[field] = [value.replace("av-", "AV-").replace("tmdb-", "TMDB-").replace("ebay-", "EBAY-") for value in matches]
+                p[field] = [value.replace("av-", "AV-").replace("tmdb-", "TMDB-").replace("cp-", "CP-").replace("ebay-", "EBAY-") for value in matches]
                 ids.extend(matches)
         if ids:
             action = "details"
@@ -137,7 +138,7 @@ class LocalRouter:
             action_words = re.findall(r"\b(add|remove|book|reserve)\b", text)
             if len(action_words) != 1:
                 return None
-            action_text = re.sub(r"\b(?:av-[a-f0-9]{16}|tmdb-\d+|ebay-v1\|\d+\|\d+)\b", " ", text)
+            action_text = re.sub(r"\b(?:av-[a-f0-9]{16}|tmdb-\d+|cp-[\w-]+|ebay-v1\|\d+\|\d+)\b", " ", text)
             remainder = re.sub(r"\b[fpmsc]\d{3}\b", " ", action_text)
             quantity_text = re.sub(r"\b(?:first|second|third|fourth|cheaper|cheapest) one\b", " ", remainder)
             if len(re.findall(r"\b" + NUMBER + r"\b", quantity_text)) > 1:
@@ -215,6 +216,12 @@ class LocalRouter:
                 if re.search(r"\b" + row.flight_number.casefold() + r"\b", text):
                     p["flight_number"] = row.flight_number
         elif domain == "shopping":
+            currency = re.search(r"\b(usd|eur|gbp|rub|try|aed)\b", text)
+            if currency:
+                p["currency"] = currency[1].upper()
+                for old, new in (("min_price_azn", "min_price"), ("max_price_azn", "max_price")):
+                    if old in p:
+                        p[new] = p.pop(old)
             explicit_query = product_search_query(text) if action in {"search", "sort"} else None
             for term in PRODUCTS:
                 if term in text:

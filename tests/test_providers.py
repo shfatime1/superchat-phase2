@@ -170,19 +170,17 @@ def test_birmarket_has_no_fabricated_public_api():
 
 
 def test_unavailable_adapters_report_authorization_for_detail_requests():
-    engine = ProviderDomainEngine(Settings())
+    engine = ProviderDomainEngine(Settings(shopping_provider="birmarket"))
     state = SessionState()
     for domain, parameters in (("shopping", {"product_ids": ["P001"]}),
                                ("cinema", {"movie_ids": ["M001"]})):
         result = engine.execute(intent(domain, "details", **parameters), state)[0]
-        assert result.code == "authorization_required"
-        assert result.data["provider"]["status"] == "unavailable"
+        assert result.code == ("authorization_required" if domain == "shopping" else "unknown_id")
+        if domain == "shopping":
+            assert result.data["provider"]["status"] == "unavailable"
 
 
-def test_cinemaplus_authorization_and_separate_tmdb_metadata():
-    official = run(CinemaPlusProvider().search(CinemaParameters(date="2026-12-01")))
-    assert official.source.provider == "CinemaPlus Azerbaijan" and not official.items
-    assert official.source.source_url == "https://cinemastercard.az/"
+def test_separate_tmdb_metadata():
     calls = []
     def handler(request):
         calls.append(request)
@@ -250,7 +248,7 @@ def test_optional_ebay_is_not_relabeled_birmarket():
 def test_provider_engine_comparisons_state_and_no_reservations():
     http = transport(lambda r: httpx.Response(200, json={"success": True, "data": [fare(),
         {**fare(), "price": 150, "flight_number": "88"}]}))
-    engine = ProviderDomainEngine(Settings(travelpayouts_token="test"), http)
+    engine = ProviderDomainEngine(Settings(travelpayouts_token="test", shopping_provider="birmarket"), http)
     state = SessionState()
     first = engine.execute(intent("flights", origin="GYD", destination="IST", departure_date="2026-12-01"), state)[0]
     ids = [r["id"] for r in first.data["flights"]]
@@ -275,8 +273,9 @@ def test_active_app_never_loads_fixtures_and_preserves_history(tmp_path, monkeyp
     def forbidden(*args):
         pytest.fail("Provider mode attempted to load fixture JSON")
     monkeypatch.setattr("app.repositories.Repositories.from_json", forbidden)
-    settings = Settings(routing_mode="offline", data_dir=tmp_path)
+    settings = Settings(routing_mode="offline", data_dir=tmp_path, shopping_provider="birmarket")
     with TestClient(create_app(settings)) as client:
+        client.app.state.chat_service.engine.http.transport = httpx.MockTransport(lambda r: httpx.Response(403))
         assert client.get("/health").json() == {"status": "ok"}
         assert client.get("/api/client").json()["data_mode"] == "providers"
         first = client.post("/api/chat", json={"message": "Show shopping products"}).json()

@@ -179,15 +179,30 @@ def render_provider(outcome):
     for index, row in enumerate(data.get("products", []), 1):
         price = row.get("price")
         lines.append(f"{index}. {row['id']} | {row['title']}" + (f" | {price['amount']} {price['currency']}" if price else ""))
+        for field in ("brand", "category", "color", "condition", "availability_status", "description"):
+            if row.get(field):
+                lines.append(field.replace("_", " ") + ": " + row[field])
         if row.get("product_url"):
             lines.append(row["product_url"])
     for index, row in enumerate(data.get("movies", []), 1):
-        lines.append(f"{index}. {row['id']} | {row['title']} | TMDB metadata; CinemaPlus screening unverified")
+        label = "CinemaPlus official public listing" if row.get("movie_url") else "TMDB metadata; CinemaPlus screening unverified"
+        lines.append(f"{index}. {row['id']} | {row['title']} | {label}")
         if row.get("synopsis"):
             lines.append(row["synopsis"])
         if row.get("rating") is not None:
             lines.append(f"TMDB rating: {row['rating']}/10")
         lines.append(row["metadata_url"])
+        if row.get("showtimes_url"):
+            lines.append("Official schedule: " + row["showtimes_url"])
+        if row.get("duration_min") is not None:
+            lines.append(f"Duration: {row['duration_min']} minutes")
+    if data.get("cinemas"):
+        lines.append("CinemaPlus locations: " + "; ".join(c["name"] + " — " + c["source_url"] for c in data["cinemas"]))
+    for row in data.get("showtimes", []):
+        price = row.get("price")
+        lines.append(f"{row['movie_title']} | {row['cinema_name']} | {row['date']} {row['time']} | "
+                     f"{row.get('hall') or 'Hall unspecified'}" + (f" | {price['amount']} {price['currency']} listed price" if price else ""))
+        lines.append("Official schedule: " + row["showtimes_url"] + " | Seat availability unknown")
     return "\n".join(lines)
 
 

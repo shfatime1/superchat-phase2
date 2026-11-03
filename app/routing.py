@@ -168,8 +168,13 @@ class GeminiRouter:
                 "Resolve today/tomorrow/weekdays from this date. Use ISO dates and preserve date expressions. "
                 "Next weekday means that weekday in the following week. Flight currency may be supplied "
                 "as currency (ISO 4217). Flight prices are cached, not confirmed quotes. "
-                "IDs may start AV-, TMDB-, or EBAY-; copy the whole ID exactly. "
-                "Birmarket catalog and CinemaPlus screenings require authorization. TMDB is metadata only.")
+                "IDs may start AV-, TMDB-, CP-, CPC-, CPS-, or EBAY-; copy the whole ID exactly. "
+                "Birmarket catalog requires authorization. CinemaPlus public movie/location pages can provide "
+                "published listings and showtimes; seat availability/reservations are unavailable. "
+                "TMDB is a secondary metadata source, never confirmed CinemaPlus screenings.")
+            instruction += (" For shopping budgets in explicit non-AZN currency, use currency plus min_price/max_price. "
+                "Keep min_price_azn/max_price_azn for AZN budgets. Do not convert currencies. "
+                "For CinemaPlus searches extract movie_title, cinema_name and date; do not infer screening data.")
         contents = json.dumps({"reference_date": base_date.isoformat(),
                                "context": context, "message": message}, ensure_ascii=False)
         try:

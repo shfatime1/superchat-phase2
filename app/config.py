@@ -16,8 +16,11 @@ class Settings:
     data_mode: str = "providers"
     travelpayouts_token: str | None = field(default=None, repr=False)
     tmdb_token: str | None = field(default=None, repr=False)
+    cinema_provider: str = "auto"
     ebay_token: str | None = field(default=None, repr=False)
-    shopping_provider: str = "birmarket"
+    ebay_client_id: str | None = field(default=None, repr=False)
+    ebay_client_secret: str | None = field(default=None, repr=False)
+    shopping_provider: str = "auto"
     ebay_marketplace: str = "EBAY_US"
     flight_currency: str = "AZN"
     flight_market: str | None = None
@@ -42,8 +45,11 @@ class Settings:
             data_mode=os.getenv("SUPERCHAT_DATA_MODE", "providers").strip().lower(),
             travelpayouts_token=(os.getenv("TRAVELPAYOUTS_API_TOKEN") or "").strip() or None,
             tmdb_token=(os.getenv("TMDB_READ_ACCESS_TOKEN") or "").strip() or None,
+            cinema_provider=os.getenv("CINEMA_PROVIDER", "auto").strip().lower(),
             ebay_token=(os.getenv("EBAY_ACCESS_TOKEN") or "").strip() or None,
-            shopping_provider=os.getenv("SHOPPING_PROVIDER", "birmarket").strip().lower(),
+            ebay_client_id=(os.getenv("EBAY_CLIENT_ID") or "").strip() or None,
+            ebay_client_secret=(os.getenv("EBAY_CLIENT_SECRET") or "").strip() or None,
+            shopping_provider=os.getenv("SHOPPING_PROVIDER", "auto").strip().lower(),
             ebay_marketplace=os.getenv("EBAY_MARKETPLACE", "EBAY_US").strip(),
             flight_currency=os.getenv("FLIGHT_CURRENCY", "AZN").strip().upper(),
             flight_market=(os.getenv("FLIGHT_MARKET") or "").strip() or None,

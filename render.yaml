@@ -17,7 +17,9 @@ services:
       - key: SUPERCHAT_DATA_MODE
         value: providers
       - key: SHOPPING_PROVIDER
-        value: birmarket
+        value: auto
+      - key: CINEMA_PROVIDER
+        value: auto
       - key: FLIGHT_CURRENCY
         value: AZN
       - key: PROVIDER_TIMEOUT_SECONDS

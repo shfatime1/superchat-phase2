@@ -9,6 +9,7 @@ __pycache__/
 .coverage
 htmlcov/
 tmp/
+artifacts/
 *.log
 .idea/
 .vscode/
