@@ -60,10 +60,10 @@ class TMDBProvider:
             return self.result(doc, rows, partial=True)
         except ProviderFailure as exc:
             if exc.code == "invalid_response":
-                self.http.discard()
+                self.http.discard(host="api.themoviedb.org")
             return unavailable(self.name, "https://www.themoviedb.org/", NOTICE + " Metadata unavailable: " + exc.code.replace("_", " "), exc.code, exc.retry_after)
         except (KeyError, ValueError, TypeError):
-            self.http.discard()
+            self.http.discard(host="api.themoviedb.org")
             return unavailable(self.name, "https://www.themoviedb.org/", "TMDB returned invalid data. " + NOTICE, "invalid_response")
 
     async def details(self, movie_id):
@@ -78,7 +78,7 @@ class TMDBProvider:
         except ProviderFailure as exc:
             return unavailable(self.name, "https://www.themoviedb.org/", "TMDB metadata unavailable. " + NOTICE, exc.code, exc.retry_after)
         except (KeyError, ValueError, TypeError):
-            self.http.discard()
+            self.http.discard(host="api.themoviedb.org")
             return unavailable(self.name, "https://www.themoviedb.org/", "TMDB returned invalid data. " + NOTICE, "invalid_response")
 
     @staticmethod

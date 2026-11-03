@@ -81,7 +81,8 @@ def test_thirty_minute_cache_isolation_expiry_refresh_and_context_invalidation()
         query = {"message": "Show headphones under $100", "session_id": sid}
         cached = client.post("/api/chat", json=query).json()
         assert len(calls) == 1 and cached["debug"]["cache"]["hits"] == 1
-        assert cached["debug"]["routing"]["cache"] == "hit"
+        # Provider data is reused, but each new message is classified in context.
+        assert cached["debug"]["routing"]["cache"] == "miss"
         # Separate conversation, even for the same browser, cannot read that cache.
         client.post("/api/chat", json={"message": "Show headphones under $100"})
         assert len(calls) == 2

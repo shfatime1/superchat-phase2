@@ -26,6 +26,12 @@ services:
         value: AZN
       - key: PROVIDER_TIMEOUT_SECONDS
         value: "8"
+      - key: PROVIDER_CONNECT_TIMEOUT_SECONDS
+        value: "3"
+      - key: PROVIDER_REQUEST_BUDGET_SECONDS
+        value: "12"
+      - key: PROVIDER_DOMAIN_BUDGET_SECONDS
+        value: "20"
       - key: PROVIDER_RETRIES
         value: "2"
       - key: PROVIDER_CACHE_TTL

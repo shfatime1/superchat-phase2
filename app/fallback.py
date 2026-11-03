@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from app.dates import date_expression, resolve_date
 from app.cinema_queries import normalize_cinema_discovery
 from app.routing import GeminiRouter, InvalidRouterResponse, RouterUnavailable, normalize_request_queries, product_search_query
-from app.query_context import PRODUCTS, domain_clauses
+from app.query_context import PRODUCTS, domain_clauses, explicit_domains
 from app.schemas import RoutingResult
 from app.shopping_currency import normalize_shopping_money
 from app.languages import detect_language, normalize_text
@@ -34,13 +34,7 @@ class LocalRouter:
         self.reference_date = reference_date
 
     def domains(self, text):
-        found = []
-        if re.search(r"\b(flights?|airlines?|aviasales|baggage|passengers?|f\d{3}|av-[a-f0-9]{16})\b", text):
-            found.append("flights")
-        if re.search(r"\b(shopping|birmarket|ebay|buywhere|bw-[a-z0-9_-]+|products?|cart|stock|p\d{3})\b", text) or any(word in text for word in PRODUCTS):
-            found.append("shopping")
-        if re.search(r"\b(cinema\w*|tmdb-\d+|cp-[\w-]+|movies?|films?|showtimes?|tickets?|playing|[msc]\d{3}|sci-fi|comedy|horror)\b", text):
-            found.append("cinema")
+        found = explicit_domains(text)
         if any(movie.title.casefold() in text for movie in self.repos.movies.list_all()) and "cinema" not in found:
             found.append("cinema")
         return found
@@ -306,11 +300,21 @@ class ResilientRouter:
         with self._lock:
             unavailable = time.monotonic() < self._unavailable_until
         if self.settings.routing_mode == "offline" or not self.settings.api_key or unavailable:
-            return self.local.route(message, state)
+            result = self.local.route(message, state)
+            result.fallback_reason = self.status()
+            return result
         try:
             return self.primary.route(message, state)
-        except (RouterUnavailable, InvalidRouterResponse):
-            logger.warning("gemini_routing_fallback reason=primary_failure cooldown_seconds=60")
+        except InvalidRouterResponse as exc:
+            # A malformed classification affects this turn, not every other chat.
+            logger.warning("gemini_routing_fallback reason=%s cooldown_seconds=0", exc.reason)
+            result = self.local.route(message, state)
+            result.fallback_reason = exc.reason
+            return result
+        except RouterUnavailable as exc:
+            logger.warning("gemini_routing_fallback reason=%s cooldown_seconds=60", exc.reason)
             with self._lock:
                 self._unavailable_until = time.monotonic() + 60
-            return self.local.route(message, state)
+            result = self.local.route(message, state)
+            result.fallback_reason = exc.reason
+            return result

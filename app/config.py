@@ -27,6 +27,9 @@ class Settings:
     flight_currency: str = "AZN"
     flight_market: str | None = None
     provider_timeout_seconds: float = 8.0
+    provider_connect_timeout_seconds: float = 3.0
+    provider_request_budget_seconds: float = 12.0
+    provider_domain_budget_seconds: float = 20.0
     provider_retries: int = 2
     provider_cache_ttl: int = 1800
     chat_timeout_seconds: int = 120
@@ -60,6 +63,9 @@ class Settings:
             flight_currency=os.getenv("FLIGHT_CURRENCY", "AZN").strip().upper(),
             flight_market=(os.getenv("FLIGHT_MARKET") or "").strip() or None,
             provider_timeout_seconds=max(0.1, min(30, float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "8")))),
+            provider_connect_timeout_seconds=max(0.1, min(10, float(os.getenv("PROVIDER_CONNECT_TIMEOUT_SECONDS", "3")))),
+            provider_request_budget_seconds=max(0.1, min(30, float(os.getenv("PROVIDER_REQUEST_BUDGET_SECONDS", "12")))),
+            provider_domain_budget_seconds=max(0.1, min(45, float(os.getenv("PROVIDER_DOMAIN_BUDGET_SECONDS", "20")))),
             provider_retries=max(0, min(3, int(os.getenv("PROVIDER_RETRIES", "2")))),
             provider_cache_ttl=max(1, min(86400, int(os.getenv("PROVIDER_CACHE_TTL", "1800")))),
             chat_timeout_seconds=max(10, min(180, int(os.getenv("CHAT_TIMEOUT_SECONDS", "120")))),

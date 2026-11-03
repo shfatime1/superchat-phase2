@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from app.config import REFERENCE_DATE, Settings
 from app.dates import date_expression, resolve_date
 from app.cinema_queries import normalize_cinema_discovery
-from app.query_context import intent_messages
+from app.query_context import intent_messages, explicit_domains
 from app.languages import detect_language, normalize_text
 from app.schemas import (Category, CinemaIntent, Domain, FlightIntent, RoutingResult,
                          ShoppingIntent)
@@ -141,11 +141,32 @@ For '6 November' without a year use the competition year 2026.
 
 
 class RouterUnavailable(RuntimeError):
-    pass
+    def __init__(self, message, reason="provider_unavailable"):
+        super().__init__(message)
+        self.reason = reason
 
 
 class InvalidRouterResponse(RuntimeError):
-    pass
+    def __init__(self, message, reason="invalid_structured_output"):
+        super().__init__(message)
+        self.reason = reason
+
+
+def routing_context(state):
+    """Keep routing state, not catalogue payloads, response prose or diagnostics."""
+    context = state.model_dump(mode="json", exclude={"history", "session_id"}, exclude_none=True)
+    for domain in ("flights", "shopping", "cinema"):
+        context[domain].pop("provider_snapshot", None)
+    context["recent_history"] = []
+    for turn in state.history[-12:]:
+        item = {"role": turn.role}
+        if turn.role == "user":
+            item["content"] = turn.content
+        elif turn.routing:
+            item.update(category=turn.routing.category.value,
+                        domains=[d.value for d in turn.routing.domains])
+        context["recent_history"].append(item)
+    return context
 
 
 class Router(Protocol):
@@ -290,9 +311,7 @@ class GeminiRouter:
         if not self.settings.api_key:
             logger.warning("GEMINI_KEY_MISSING")
             raise RouterUnavailable("GEMINI_API_KEY is not configured")
-        context = state.model_dump(mode="json", exclude={"history", "session_id"})
-        context["recent_history"] = [turn.model_dump(mode="json", exclude_none=True, exclude={"results"})
-                                     for turn in state.history[-12:]]
+        context = routing_context(state)
         base_date = self.settings.reference_date()
         instruction = SYSTEM_INSTRUCTION
         if self.settings.data_mode != "fixtures":
@@ -334,15 +353,24 @@ class GeminiRouter:
             reason, status = safe_provider_failure(exc)
             logger.warning("gemini_routing_failed reason=%s http_status=%s timeout_ms=%s",
                            reason, status, self.settings.gemini_timeout_ms)
-            raise RouterUnavailable("Routing service is temporarily unavailable") from None
+            raise RouterUnavailable("Routing service is temporarily unavailable", reason) from None
         try:
             result = RoutingResult.model_validate_json(response.text or "")
             result.source = "gemini"
+            result.fallback_reason = None
         except (ValidationError, ValueError, TypeError, AttributeError) as exc:
             logger.warning("gemini_routing_failed reason=invalid_structured_output")
             raise InvalidRouterResponse(
                 "Routing service returned an invalid result"
             ) from None
+        # An explicit new subject cannot be replaced by the previous active domain.
+        # Reject before query normalization can turn unrelated words into filters.
+        named = explicit_domains(message)
+        if len(named) == 1 and result.domains != [Domain(named[0])]:
+            raise InvalidRouterResponse("Routing ignored an explicit domain", "explicit_domain_mismatch")
+        if (result.category == Category.FOLLOW_UP and named and
+                any(getattr(state, d.value).intent is None for d in result.domains)):
+            result.category = Category(named[0])
         result = normalize_request_queries(message, result, state, base_date)
         result.language = detect_language(message, result.language or state.language)
         result = self._resolve_context(result, state, base_date)

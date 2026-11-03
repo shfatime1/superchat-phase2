@@ -126,8 +126,8 @@ class AviasalesProvider:
                 local_cache_hit=doc.cached, source_url=URL, notice=NOTICE), items=rows, partial=True)
         except ProviderFailure as exc:
             if exc.code in {"invalid_response", "currency_mismatch"}:
-                self.http.discard()
+                self.http.discard(host="api.travelpayouts.com")
             return unavailable(self.name, URL, "Flight data unavailable: " + exc.code.replace("_", " ") + ".", exc.code, exc.retry_after)
         except (KeyError, ValueError, TypeError, ValidationError):
-            self.http.discard()
+            self.http.discard(host="api.travelpayouts.com")
             return unavailable(self.name, URL, "The flight provider returned invalid data.", "invalid_response")

@@ -43,7 +43,7 @@ function setBusy(value) {
   $("loading").hidden = !value || !!liveTurn;
   input.disabled = value || !!current()?.archived || !ready;
   $("send-button").disabled = value || !input.value.trim() || !!current()?.archived || !ready;
-  document.querySelectorAll(".suggestion,.mixed-prompt,.new-chat,.conversation-button").forEach(element => { element.disabled = value || !ready; });
+  document.querySelectorAll(".suggestion,.mixed-prompt,.new-chat,.conversation-button,[data-assistant]").forEach(element => { element.disabled = value || !ready; });
   document.querySelectorAll(".card-actions button,.card-actions input,.result-heading button,.cart-line button,.carousel-controls button").forEach(element => {
     element.disabled = value || !ready || !!current()?.archived || element.dataset.unavailable === "true";
   });
@@ -377,7 +377,7 @@ function renderTurn(turn) {
   if (turn.role === "user") { block.append(node("div", "user-bubble", turn.content)); return block; }
   const heading = node("div", "assistant-heading");
   heading.append(node("span", "assistant-avatar", "✦"), node("span", "", "SuperChat"));
-  if (turn.routing?.source === "local") heading.append(node("span", "mode-badge", "Local assistant"));
+  if (turn.routing?.source === "local" && (turn.routing.intents?.length || turn.routing.fallback_reason)) heading.append(node("span", "mode-badge", "Local assistant"));
   block.append(heading);
   if (!turn.results?.length) block.append(node("div", "assistant-text", turn.content));
   else {
@@ -408,8 +408,18 @@ function showLive() {
 }
 
 function closeDebugger() { $("debug-panel").hidden = true; debugTrigger?.focus(); }
+function syncConnection(routing) {
+  if (!routing || !(routing.intents?.length || routing.fallback_reason)) return;
+  const local = routing.source === "local";
+  $("connection").classList.toggle("degraded", local);
+  $("connection").replaceChildren(node("span"), node("span", "", local ? "Local assistant" : "Connected to Gemini"));
+  $("connection").title = routing.fallback_reason || "";
+}
 function render() {
   const chat = current(); renderSidebar(); messages.replaceChildren();
+  const lastReply = [...(chat?.turns || [])].reverse().find(turn => turn.routing?.domains?.length === 1);
+  window.SuperChatUI.syncDomain(chat?.domainHint || chat?.lastDomain || lastReply?.routing.domains[0] || "flights");
+  syncConnection([...(chat?.turns || [])].reverse().find(turn => turn.routing?.intents?.length || turn.routing?.fallback_reason)?.routing);
   $("welcome").hidden = !!chat?.turns.length;
   (chat?.turns || []).forEach(turn => messages.append(renderTurn(turn)));
   if (chat?.archived) {
@@ -431,7 +441,8 @@ async function restoreSession() {
   const targetId = chat.id;
   try {
     const state = await api("/api/session/" + encodeURIComponent(chat.sessionId));
-    chat.turns = state.history; save(); if (activeId === targetId) render();
+    chat.turns = state.history; chat.lastDomain = state.last_active_domain;
+    chat.lastLanguage = state.language; save(); if (activeId === targetId) render();
   } catch (error) {
     if (error.status === 404) { chat.archived = true; save(); if (activeId === targetId) render(); }
     else if (activeId === targetId) showNotice("Saved messages are available. The server could not refresh this conversation yet.");
@@ -446,6 +457,7 @@ async function send(text, retry = false) {
     const generated = text != null;
     text = (text ?? input.value).trim(); if (!text || text.length > 8000) return;
     chat.pending = {message: text, session_id: chat.sessionId, request_id: crypto.randomUUID()};
+    if (chat.domainHint) chat.pending.domain_hint = chat.domainHint;
     const language = window.SuperChatUI.requestLanguage || (generated ? chat.lastLanguage : null);
     if (language) chat.pending.language = language;
     chat.turns.push({role: "user", content: text});
@@ -469,10 +481,10 @@ async function send(text, retry = false) {
       }
     });
     chat.lastLanguage = answer.routing.language;
+    chat.lastDomain = answer.state.last_active_domain; chat.domainHint = null;
     window.SuperChatUI.syncLanguage(answer.routing.language);
     chat.sessionId = answer.session_id; chat.turns = answer.state.history; chat.pending = null; clearError(); save();
-    $("connection").classList.toggle("degraded", answer.routing.source === "local");
-    $("connection").replaceChildren(node("span"), node("span", "", answer.routing.source === "local" ? "Local assistant" : "Connected to Gemini"));
+    syncConnection(answer.routing);
   } catch (error) {
     if (error.status === 404) { chat.archived = true; chat.pending = null; save(); }
     else if ([409, 422].includes(error.status)) {
@@ -483,6 +495,10 @@ async function send(text, retry = false) {
     if (!chat.archived) input.focus();
   }
 }
+window.SuperChatUI.onDomainSelect = domain => {
+  const chat = current();
+  if (!busy && chat) { chat.domainHint = domain; save(); }
+};
 $("chat-form").addEventListener("submit", event => { event.preventDefault(); send(); });
 input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 130) + "px"; setBusy(busy); });
 input.addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); } });
@@ -510,7 +526,7 @@ async function init() {
       activeId = sessionStorage.getItem(storageKey + ".active") || conversations[0]?.id;
     } catch { conversations = []; }
     ready = true;
-    if (client.routing_mode === "offline") { $("connection").replaceChildren(node("span"), node("span", "", "Local assistant")); $("connection").classList.add("degraded"); }
+    if (["offline", "missing_key", "cooldown"].includes(client.routing_status)) { $("connection").replaceChildren(node("span"), node("span", "", "Local assistant")); $("connection").classList.add("degraded"); $("connection").title = client.routing_status; }
     if (!current()) newConversation(); else render();
     await restoreSession(); input.focus();
   } catch { showError("SuperChat could not connect to the backend. Check that it is running, then reload this page.", () => location.reload()); }

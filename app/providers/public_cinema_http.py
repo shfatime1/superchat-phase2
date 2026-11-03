@@ -5,11 +5,9 @@ from threading import RLock
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
-import httpx
-
 from app.providers.http import Document, ProviderFailure
 from app.providers.models import utcnow
-from app.diagnostics import cache_context, current, http_call, http_status, http_attempt
+from app.diagnostics import cache_context, active_call, http_call
 
 ROOT = "https://cinemastercard.az"
 AGENT = "SuperChat/2.0 (public cinema listings; cached, read-only)"
@@ -104,55 +102,56 @@ class PublicCinemaPages:
 
     async def _fetch_scoped(self, url, ttl):
         scope, refresh = cache_context()
-        key = (scope, url)
+        # Published crawl policy contains no session data. Share only this policy,
+        # never movie results, and never use it past its validated TTL.
+        key = (None if url.endswith("/robots.txt") else scope, url)
         with self._lock:
             entry = self._cache.get(key)
             if entry and entry[0] > self.http.clock() and not refresh:
                 return Document(entry[1].data, entry[1].fetched_at, True)
             if self._cooldown_until > self.http.clock():
                 raise ProviderFailure("rate_limited", int(self._cooldown_until - self.http.clock()) + 1)
+        response = await self.http.request(url, headers={"User-Agent": AGENT},
+            min_spacing=self._spacing, before_attempt=self._reserve_request)
+        if response.status_code in {401, 403}:
+            raise ProviderFailure("public_access_restricted")
+        if response.status_code == 429:
+            wait = self.http.retry_delay(response.headers.get("Retry-After"))
+            with self._lock:
+                self._cooldown_until = self.http.clock() + wait
+            raise ProviderFailure("rate_limited", wait)
+        if response.status_code != 200:
+            raise ProviderFailure("public_page_unavailable")
+        if len(response.content) > 2_000_000:
+            raise ProviderFailure("invalid_response")
+        expected = "text/" if url.endswith("robots.txt") else "text/html"
+        if expected not in response.headers.get("content-type", "").lower():
+            raise ProviderFailure("invalid_response", reason="unexpected_content_type")
+        if url.endswith("robots.txt") and re.search(r"<(?:!doctype|html|script)\b", response.text[:2048], re.I):
+            raise ProviderFailure("public_access_restricted", reason="robots_challenge")
+        doc = Document(response.text, utcnow())
+        with self._lock:
+            self._cache[key] = (self.http.clock() + ttl, doc)
+            if len(self._cache) > 128:
+                del self._cache[next(iter(self._cache))]
+        return doc
+
+    async def _reserve_request(self):
+        # Every retry also reserves a global crawl slot; concurrent chats cannot
+        # violate the site's published delay. A long queue fails promptly.
+        with self._lock:
+            if self._cooldown_until > self.http.clock():
+                raise ProviderFailure("rate_limited", int(self._cooldown_until - self.http.clock()) + 1)
             delay = max(0, self._next_request - self.http.clock())
+            if delay >= self.http.request_budget:
+                raise ProviderFailure("timeout", reason="crawl_queue_budget")
             self._last_start = self.http.clock() + delay
-            self._next_request = self.http.clock() + delay + self._spacing
+            self._next_request = self._last_start + self._spacing
         if delay:
+            call = active_call.get()
+            if call is not None:
+                call["queue_wait_ms"] = call.get("queue_wait_ms", 0) + round(delay * 1000)
             await self.http.sleep(delay)
-        async with httpx.AsyncClient(timeout=self.http.timeout, transport=self.http.transport,
-                                     follow_redirects=False, headers={"User-Agent": AGENT}) as client:
-            for attempt in range(self.http.retries + 1):
-                try:
-                    if current.get():
-                        current.get().check()
-                    http_attempt()
-                    response = await client.get(url)
-                except httpx.RequestError:
-                    if attempt < self.http.retries:
-                        await self.http.sleep(max(self._spacing, 0.5 * 2 ** attempt))
-                        continue
-                    raise ProviderFailure("network_error") from None
-                http_status(response.status_code)
-                if response.status_code in {401, 403}:
-                    raise ProviderFailure("public_access_restricted")
-                if response.status_code == 429:
-                    wait = self.http.retry_delay(response.headers.get("Retry-After"))
-                    with self._lock:
-                        self._cooldown_until = self.http.clock() + wait
-                    raise ProviderFailure("rate_limited", wait)
-                if response.status_code in {500, 502, 503, 504} and attempt < self.http.retries:
-                    await self.http.sleep(max(self._spacing, 0.5 * 2 ** attempt))
-                    continue
-                if response.status_code != 200:
-                    raise ProviderFailure("public_page_unavailable")
-                if len(response.content) > 2_000_000:
-                    raise ProviderFailure("invalid_response")
-                expected = "text/" if url.endswith("robots.txt") else "text/html"
-                if expected not in response.headers.get("content-type", "").lower():
-                    raise ProviderFailure("invalid_response")
-                doc = Document(response.text, utcnow())
-                with self._lock:
-                    self._cache[key] = (self.http.clock() + ttl, doc)
-                    if len(self._cache) > 128:
-                        del self._cache[next(iter(self._cache))]
-                return doc
 
     def discard(self):
         with self._lock:

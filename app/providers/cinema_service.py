@@ -1,6 +1,5 @@
 """Cinema-specific orchestration: official public listings first, TMDB only as fallback."""
 
-import asyncio
 
 from app.domain_models import DomainResult
 from app.domains.common import DomainIssue
@@ -8,6 +7,7 @@ from app.cinema_queries import normalized_cinema_parameters
 from app.providers.cinema import TMDBProvider
 from app.providers.cinemaplus import CinemaPlusPublicProvider, HOME
 from app.providers.models import Provenance, ProviderResult, unavailable
+from app.providers.http import ProviderFailure, run_provider
 
 
 class CinemaProviderService:
@@ -16,9 +16,17 @@ class CinemaProviderService:
             raise ValueError("CINEMA_PROVIDER must be auto, cinemaplus, or tmdb")
         self.primary, self.metadata = CinemaPlusPublicProvider(http), TMDBProvider(http, settings.tmdb_token)
         self.mode = settings.cinema_provider
+        self.http = http
 
     def execute(self, intent, state):
-        return asyncio.run(self.run(intent, state))
+        try:
+            return run_provider(self.http.run_domain(self.run(intent, state), "cinema"))
+        except ProviderFailure as exc:
+            ctx = state.cinema
+            ctx.provider_snapshot, ctx.last_result_ids, ctx.selected_ids, ctx.pending = {}, [], [], None
+            ctx.last_showtime_ids, ctx.selected_showtime_ids = [], []
+            return self.outcome(intent.intent, unavailable("CinemaPlus Azerbaijan", HOME,
+                "Cinema data took too long. Please retry or open the official site.", exc.code, exc.retry_after))
 
     async def run(self, intent, state):
         ctx, delta, action = state.cinema, intent.parameters, intent.intent

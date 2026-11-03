@@ -30,7 +30,7 @@ def normalize_cinema_discovery(message, result):
     if len(result.intents) != 1 or result.intents[0].domain != "cinema":
         return result
     intent = result.intents[0]
-    if intent.intent not in {"search", "details", "filter", "follow_up"}:
+    if intent.intent not in {"search", "details", "filter", "follow_up", "resume"}:
         return result
     text = normalize_text(message).strip(" .?!")
     text = re.sub(r"^(?:please\s+)?(?:show(?:\s+me)?|list|find(?:\s+me)?)\s+", "", text)

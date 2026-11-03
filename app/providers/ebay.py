@@ -60,7 +60,7 @@ class EbayProvider:
 
     def failure(self, exc):
         if exc.code == "invalid_response":
-            self.http.discard()
+            self.http.discard(host="api.ebay.com")
         message = "Set EBAY_CLIENT_ID and EBAY_CLIENT_SECRET (or EBAY_ACCESS_TOKEN) in Render to enable real eBay products." if exc.code == "missing_credentials" else "eBay catalog unavailable: " + exc.code.replace("_", " ") + "."
         return unavailable(self.name, "https://www.ebay.com/", message, exc.code, exc.retry_after)
 
@@ -132,7 +132,7 @@ class EbayProvider:
         except ProviderFailure as exc:
             return self.failure(exc)
         except (KeyError, TypeError, ValueError):
-            self.http.discard()
+            self.http.discard(host="api.ebay.com")
             return unavailable(self.name, "https://www.ebay.com/", "eBay returned invalid data.", "invalid_response")
 
     async def details(self, item_id):
@@ -147,5 +147,5 @@ class EbayProvider:
         except ProviderFailure as exc:
             return self.failure(exc)
         except (KeyError, TypeError, ValueError):
-            self.http.discard()
+            self.http.discard(host="api.ebay.com")
             return self.failure(ProviderFailure("invalid_response"))

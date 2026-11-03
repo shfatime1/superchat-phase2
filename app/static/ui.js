@@ -1,4 +1,4 @@
-/* Interface preferences only. No API calls, routing changes or chat-storage writes. */
+/* Interface preferences and explicit assistant selection. No API calls. */
 "use strict";
 window.SuperChatUI = (() => {
   const key = "superchat.ui.preferences";
@@ -184,15 +184,19 @@ window.SuperChatUI = (() => {
   function setTheme(theme) { if (["light", "dark"].includes(theme)) { preferences.theme = theme; persist(); apply(); } }
   function setLanguage(language, explicit = true) { if (["az", "en", "ru"].includes(language)) { preferences.language = language; preferences.languageExplicit = explicit; persist(); apply(); } }
   function syncLanguage(language) { if (!preferences.languageExplicit) setLanguage(language, false); }
+  function syncDomain(domain) {
+    if (prompts[domain]) { preferences.assistant = domain; apply(); }
+  }
   document.getElementById("page-language").addEventListener("change", event => setLanguage(event.target.value));
   ["theme-toggle", "theme-toggle-sidebar"].forEach(id => document.getElementById(id).addEventListener("click", () => setTheme(preferences.theme === "dark" ? "light" : "dark")));
   document.querySelectorAll("[data-assistant]").forEach(el => el.addEventListener("click", () => {
     preferences.assistant = el.dataset.assistant; persist(); apply();
+    window.SuperChatUI.onDomainSelect?.(preferences.assistant);
     document.getElementById("sidebar").classList.remove("open"); document.getElementById("scrim").hidden = true;
     document.getElementById("menu-button").setAttribute("aria-expanded", "false"); document.getElementById("message-input").focus();
   }));
   apply();
-  return {translate, setText, setTheme, setLanguage, syncLanguage,
+  return {translate, setText, setTheme, setLanguage, syncLanguage, syncDomain,
     get requestLanguage() { return preferences.languageExplicit ? preferences.language : null; },
     get language() { return preferences.language; }};
 })();

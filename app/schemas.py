@@ -122,6 +122,7 @@ class CinemaIntent(IntentBase):
 
 class RoutingResult(Schema):
     source: Literal["gemini", "local"] = "gemini"
+    fallback_reason: str | None = None
     category: Category
     domains: list[Domain] = Field(default_factory=list)
     intents: list[FlightIntent | ShoppingIntent | CinemaIntent] = Field(default_factory=list)
@@ -149,6 +150,7 @@ class RoutingResult(Schema):
 class ChatRequest(Schema):
     message: str = Field(min_length=1, max_length=8000)
     language: Literal["az", "en", "ru"] | None = None
+    domain_hint: Domain | None = None
     refresh_cache: bool = False
     session_id: UUID | None = None
     request_id: UUID | None = None

@@ -22,10 +22,13 @@ Cache keys include conversation identity, endpoint, canonical request parameters
 and authentication headers. Changed currency, filters, date, market, page or
 credentials cannot reuse an incompatible response. Errors/malformed envelopes are
 not cached; malformed-response invalidation is scoped to the active conversation.
-`refresh_cache: true` bypasses applicable cache entries, including routing cache.
-Independent fresh searches can reuse their routing for 30 minutes; contextual
-follow-ups, selections and mutations always route again. Relative-date routing
-cache keys include the Baku date. Caches are bounded and clear on process restart.
+`refresh_cache: true` bypasses applicable provider cache entries. Every new message
+is routed against its current conversation state; routing decisions are not cached.
+Retries with the same request ID still return the original committed response.
+Caches are bounded and clear on process restart. Validated CinemaPlus robots
+policies are shared for one hour because they contain no user or session data;
+movie/product results remain scoped to the conversation. An expired, inaccessible
+or challenged robots policy never authorizes a new page fetch.
 
 The Debugger button below each assistant turn opens a right drawer. Saved
 diagnostics contain only an opaque trace ID, source/category/domain/operation and
@@ -58,3 +61,6 @@ to `1800` when you next deploy. No `.env` file is required. No deployment was pe
 Focused verification: `python -m pytest tests/test_phase2_ops.py -q` and
 `node --test tests/stream.test.cjs`. Existing provider authentication, cooldown,
 timeout and session-replay regressions are also reused.
+
+See [connectivity diagnostics](provider-connectivity.md) for bounded network probes,
+per-attempt Debugger fields and the timeout budgets used on Render.

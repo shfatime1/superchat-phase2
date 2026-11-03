@@ -15,7 +15,8 @@ def explicit_domains(text):
         found.append("flights")
     if re.search(r"\b(shopping|birmarket|ebay|buywhere|bw-[a-z0-9_-]+|products?|cart|stock|p\d{3})\b", text) or any(word in text for word in PRODUCTS):
         found.append("shopping")
-    if re.search(r"\b(cinema\w*|tmdb-\d+|cp-[\w-]+|movies?|films?|showtimes?|tickets?|playing|[msc]\d{3}|sci-fi|comedy|horror)\b", text):
+    cinema_text = re.sub(r"\bflight\s+tickets?\b", "flight", text)
+    if re.search(r"\b(cinema\w*|tmdb-\d+|cp-[\w-]+|movies?|films?|showtimes?|tickets?|playing|[msc]\d{3}|sci-fi|comedy|horror)\b", cinema_text):
         found.append("cinema")
     return found
 

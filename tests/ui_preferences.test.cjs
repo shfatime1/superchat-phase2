@@ -98,3 +98,17 @@ test('automatic language sync follows replies until the user explicitly selects 
   f.ui.setLanguage('ru'); f.ui.syncLanguage('en');
   assert.equal(f.root.lang, 'ru'); assert.equal(f.ui.requestLanguage, 'ru');
 });
+
+test('backend domain sync and explicit sidebar selection stay distinct', () => {
+  const f = fixture();
+  const selected = [];
+  f.ui.onDomainSelect = domain => selected.push(domain);
+  f.ui.syncDomain('cinema');
+  assert.equal(f.tabs[2].active, true);
+  assert.deepEqual(selected, []);
+  f.tabs[1].listeners.click();
+  assert.deepEqual(selected, ['shopping']);
+  f.ui.syncDomain('flights');
+  assert.equal(f.tabs[0].active, true);
+  assert.equal(f.get('message-input').value, 'My unsent draft');
+});

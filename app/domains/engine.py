@@ -6,7 +6,7 @@ from app.domains.shopping import ShoppingService
 from app.repositories import DataSourceError
 from app.schemas import RoutingResult
 from app.state import apply_routing
-from time import perf_counter
+from time import perf_counter, monotonic
 from app.diagnostics import current
 
 
@@ -22,11 +22,14 @@ class DomainEngine:
 
     def execute(self, routing, state, on_result=None):
         outcomes = []
-        for intent in routing.intents:
+        for index, intent in enumerate(routing.intents):
             trace = current.get()
             started = perf_counter()
             if trace:
                 trace.progress("provider", domain=intent.domain)
+                # A slow provider receives a share of the remaining time rather
+                # than exhausting the entire mixed request before other domains.
+                trace.provider_budget = max(0.01, (trace.deadline - monotonic() - 5) / (len(routing.intents) - index))
             # Merge and execute in order, including multiple intents in one domain.
             apply_routing(state, RoutingResult(category=intent.domain, domains=[intent.domain], intents=[intent]))
             snapshot = getattr(state, intent.domain).model_copy(deep=True)

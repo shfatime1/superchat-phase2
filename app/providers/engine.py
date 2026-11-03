@@ -1,6 +1,5 @@
 """Bridge async providers into the existing synchronous, transactional chat flow."""
 
-import asyncio
 from contextlib import nullcontext
 
 from app.domain_models import DomainResult
@@ -11,7 +10,7 @@ from app.providers.birmarket import BirmarketProvider
 from app.providers.buywhere import BuyWhereProvider
 from app.providers.cinema_service import CinemaProviderService
 from app.providers.ebay import EbayProvider
-from app.providers.http import ProviderFailure, ProviderHTTP
+from app.providers.http import ProviderFailure, ProviderHTTP, run_provider
 from app.providers.models import ProviderResult, Provenance, unavailable
 
 
@@ -24,7 +23,9 @@ class ProviderDomainEngine(DomainEngine):
     def __init__(self, settings, http=None):
         self.inventory = NoInventory()
         self.http = http or ProviderHTTP(timeout=settings.provider_timeout_seconds,
-            retries=settings.provider_retries, ttl=settings.provider_cache_ttl)
+            retries=settings.provider_retries, ttl=settings.provider_cache_ttl,
+            connect_timeout=settings.provider_connect_timeout_seconds,
+            request_budget=settings.provider_request_budget_seconds, domain_budget=settings.provider_domain_budget_seconds)
         if settings.shopping_provider not in {"auto", "birmarket", "ebay", "buywhere"}:
             raise ValueError("SHOPPING_PROVIDER must be auto, birmarket, ebay, or buywhere")
         flights = AviasalesProvider(self.http, settings.travelpayouts_token, settings.flight_currency, settings.flight_market)
@@ -35,17 +36,26 @@ class ProviderDomainEngine(DomainEngine):
                                    settings.ebay_client_id, settings.ebay_client_secret)
         else:
             shopping = BuyWhereProvider(self.http, settings.buywhere_token, settings.buywhere_market)
-        self.services = {domain: ProviderService(domain, provider) for domain, provider in
+        self.services = {domain: ProviderService(domain, provider, self.http) for domain, provider in
                          (("flights", flights), ("shopping", shopping))}
         self.services["cinema"] = CinemaProviderService(self.http, settings)
 
 
 class ProviderService:
-    def __init__(self, domain, provider):
+    def __init__(self, domain, provider, http=None):
         self.domain, self.provider = domain, provider
+        self.http = http or provider.http
 
     def execute(self, intent, state):
-        return asyncio.run(self.run(intent, state))
+        try:
+            return run_provider(self.http.run_domain(self.run(intent, state), self.domain))
+        except ProviderFailure as exc:
+            ctx = getattr(state, self.domain)
+            ctx.provider_snapshot, ctx.last_result_ids, ctx.selected_ids, ctx.pending = {}, [], [], None
+            key = "flights" if self.domain == "flights" else "products"
+            url = "https://www.aviasales.com/" if self.domain == "flights" else getattr(self.provider, "website", "https://buywhere.ai/")
+            return self.outcome(intent.intent, key, unavailable(self.provider.name, url,
+                "This provider took too long. Please try again shortly.", exc.code, exc.retry_after))
 
     async def run(self, intent, state):
         ctx = getattr(state, self.domain)

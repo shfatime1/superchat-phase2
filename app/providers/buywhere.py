@@ -185,10 +185,10 @@ class BuyWhereProvider:
             return result
         except ProviderFailure as exc:
             if exc.code in {"invalid_response", "upstream_degraded"}:
-                self.http.discard()
+                self.http.discard(host="api.buywhere.ai")
             return self.failure(exc.code, exc.retry_after)
         except (KeyError, ValueError, TypeError, AttributeError):
-            self.http.discard()
+            self.http.discard(host="api.buywhere.ai")
             return self.failure("invalid_response")
 
     @staticmethod
@@ -235,8 +235,8 @@ class BuyWhereProvider:
             return self.result(doc, [row], partial=False)
         except ProviderFailure as exc:
             if exc.code == "invalid_response":
-                self.http.discard()
+                self.http.discard(host="api.buywhere.ai")
             return self.failure(exc.code, exc.retry_after)
         except (KeyError, ValueError, TypeError, AttributeError):
-            self.http.discard()
+            self.http.discard(host="api.buywhere.ai")
             return self.failure("invalid_response")

@@ -5,6 +5,7 @@ from time import monotonic, perf_counter
 from urllib.parse import urlsplit
 from uuid import uuid4
 import logging
+import asyncio
 
 current = ContextVar("superchat_trace", default=None)
 active_call = ContextVar("superchat_http_call", default=None)
@@ -92,7 +93,22 @@ def http_call(method, url):
     except Exception as exc:
         code = getattr(exc, "code", "request_failed")
         call["error"] = code if code in {"rate_limited", "network_error", "timeout", "credentials_or_permissions", "invalid_response", "upstream_error", "public_access_restricted", "public_page_unavailable", "robots_disallowed"} else "request_failed"
+        reason = getattr(exc, "reason", None)
+        if reason in {"dns_error", "dns_temporary", "tls_error", "tls_certificate_error", "tls_configuration_error",
+                      "transport_configuration_error", "proxy_error",
+                      "connect_timeout", "tls_timeout", "read_timeout", "write_timeout", "pool_timeout",
+                      "connection_reset", "connection_refused", "remote_protocol_error", "connection_error",
+                      "invalid_transport_response", "network_access_denied", "request_budget_exhausted", "domain_budget_exhausted",
+                      "crawl_queue_budget", "robots_challenge", "invalid_json", "unexpected_content_type"}:
+            call["failure_reason"] = reason
+        raise
+    except asyncio.CancelledError:
+        call.update(error="timeout", failure_reason="operation_budget_cancelled")
         raise
     finally:
         call["duration_ms"] = round((perf_counter() - started) * 1000)
         active_call.reset(token)
+        if call.get("error"):
+            logger.warning("provider_call_failed trace_id=%s host=%s endpoint=%s error=%s reason=%s attempts=%s duration_ms=%s",
+                trace.data["trace_id"], call["host"], call["endpoint"], call["error"],
+                call.get("failure_reason", call["error"]), call["attempts"], call["duration_ms"])
