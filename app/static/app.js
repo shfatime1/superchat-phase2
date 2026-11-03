@@ -208,11 +208,12 @@ function renderResult(result) {
   }
   return section;
 }
-function providerLink(label, href) {
+function providerLink(label, href, merchantLink = false) {
   try {
     const url = new URL(href);
-    const allowed = ["aviasales.com", "birmarket.az", "cinemastercard.az", "themoviedb.org", "ebay.com"];
-    if (url.protocol !== "https:" || url.username || url.password || !allowed.some(host => url.hostname === host || url.hostname.endsWith("." + host))) return node("span", "", label);
+    const allowed = ["aviasales.com", "birmarket.az", "cinemastercard.az", "themoviedb.org", "ebay.com", "buywhere.ai"];
+    const publicMerchant = merchantLink && url.hostname.includes(".") && !/^\d+(?:\.\d+){3}$/.test(url.hostname) && !url.hostname.includes(":") && !/\.(?:local|internal|localhost)$/.test(url.hostname) && (!url.port || url.port === "443");
+    if (url.protocol !== "https:" || url.username || url.password || !(publicMerchant || allowed.some(host => url.hostname === host || url.hostname.endsWith("." + host)))) return node("span", "", label);
     const link = node("a", "small-button", label);
     link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer";
     return link;
@@ -221,7 +222,7 @@ function providerLink(label, href) {
 function providerImage(href, label) {
   try {
     const url = new URL(href);
-    if (url.protocol !== "https:" || url.username || url.password || !["image.tmdb.org", "i.ebayimg.com", "cinemastercard.az"].includes(url.hostname)) return null;
+    if (url.protocol !== "https:" || url.username || url.password || !["image.tmdb.org", "i.ebayimg.com", "cinemastercard.az", "m.media-amazon.com", "images-na.ssl-images-amazon.com", "cdn.shopify.com", "c1.neweggimages.com", "i5.walmartimages.com", "target.scene7.com"].includes(url.hostname)) return null;
     const img = node("img", "provider-image"); img.src = url.href; img.alt = label;
     img.loading = "lazy"; img.referrerPolicy = "no-referrer";
     img.addEventListener("error", () => { img.hidden = true; });
@@ -265,7 +266,9 @@ function renderProviderResult(result) {
       if (row.category) card.append(node("p", "card-meta", row.category));
       if (row.condition) card.append(node("p", "card-meta", row.condition));
       if (row.description) card.append(node("p", "card-meta", row.description));
-      if (row.product_url) card.append(providerLink("View on " + source.provider, row.product_url));
+      if (row.merchant) card.append(node("p", "card-meta", "Retailer: " + row.merchant));
+      if (source.provider === "BuyWhere") card.append(node("p", "card-meta", "Catalog price date: " + (row.price_as_of || "unknown") + (row.price_stale ? " · Older than 24 hours; recheck price" : "")));
+      if (row.product_url) card.append(providerLink(source.provider === "BuyWhere" ? "View retailer offer" : "View on " + source.provider, row.product_url, source.provider === "BuyWhere"));
     } else {
       const official = !!row.movie_url;
       const description = official ? (row.confirmed_cinemaplus_screening ? "Published CinemaPlus showtimes below" : "Listed on the official CinemaPlus site · Select for dated showtimes") : "TMDB metadata · CinemaPlus screening unverified";

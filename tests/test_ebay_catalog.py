@@ -91,7 +91,7 @@ def test_search_and_details_share_conversation_selection_and_refresh_details():
     def handler(request):
         return httpx.Response(200, json={**ITEM, "localizedAspects": [{"name": "Brand", "value": "Sony"}]}
             if "/item/" in request.url.path else {"total": 1, "itemSummaries": [ITEM]})
-    engine = ProviderDomainEngine(Settings(ebay_token="test"), http(handler))
+    engine = ProviderDomainEngine(Settings(shopping_provider="ebay", ebay_token="test"), http(handler))
     state = SessionState()
     def route(action, **p):
         return RoutingResult.model_validate({"category": "shopping", "domains": ["shopping"], "intents": [{"domain": "shopping", "intent": action, "parameters": p}]})

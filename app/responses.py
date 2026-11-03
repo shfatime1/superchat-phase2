@@ -182,6 +182,11 @@ def render_provider(outcome):
         for field in ("brand", "category", "color", "condition", "availability_status", "description"):
             if row.get(field):
                 lines.append(field.replace("_", " ") + ": " + row[field])
+        if row.get("merchant"):
+            lines.append("Retailer: " + row["merchant"])
+        if source["provider"] == "BuyWhere":
+            lines.append("Catalog price date: " + (row.get("price_as_of") or "unknown") +
+                         (" (older than 24 hours; recheck price)" if row.get("price_stale") else ""))
         if row.get("product_url"):
             lines.append(row["product_url"])
     for index, row in enumerate(data.get("movies", []), 1):

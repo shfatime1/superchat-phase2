@@ -21,6 +21,8 @@ class Settings:
     ebay_client_id: str | None = field(default=None, repr=False)
     ebay_client_secret: str | None = field(default=None, repr=False)
     shopping_provider: str = "auto"
+    buywhere_token: str | None = field(default=None, repr=False)
+    buywhere_market: str = "US"
     ebay_marketplace: str = "EBAY_US"
     flight_currency: str = "AZN"
     flight_market: str | None = None
@@ -50,6 +52,8 @@ class Settings:
             ebay_client_id=(os.getenv("EBAY_CLIENT_ID") or "").strip() or None,
             ebay_client_secret=(os.getenv("EBAY_CLIENT_SECRET") or "").strip() or None,
             shopping_provider=os.getenv("SHOPPING_PROVIDER", "auto").strip().lower(),
+            buywhere_token=(os.getenv("BUYWHERE_API_KEY") or "").strip() or None,
+            buywhere_market=os.getenv("BUYWHERE_MARKET", "US").strip().upper(),
             ebay_marketplace=os.getenv("EBAY_MARKETPLACE", "EBAY_US").strip(),
             flight_currency=os.getenv("FLIGHT_CURRENCY", "AZN").strip().upper(),
             flight_market=(os.getenv("FLIGHT_MARKET") or "").strip() or None,

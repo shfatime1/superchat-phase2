@@ -62,7 +62,7 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         if request.url.path not in {"/docs", "/redoc", "/docs/oauth2-redirect"}:
-            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://www.themoviedb.org https://image.tmdb.org https://i.ebayimg.com https://cinemastercard.az; connect-src 'self'; frame-ancestors 'none'"
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://www.themoviedb.org https://image.tmdb.org https://i.ebayimg.com https://cinemastercard.az https://m.media-amazon.com https://images-na.ssl-images-amazon.com https://cdn.shopify.com https://c1.neweggimages.com https://i5.walmartimages.com https://target.scene7.com; connect-src 'self'; frame-ancestors 'none'"
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -90,9 +90,12 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
         return {"data_mode": settings.data_mode,
             "flights": {"provider": "Aviasales / Travelpayouts", "configured": bool(settings.travelpayouts_token),
                         "price_type": "cached", "availability": False, "reservations": False},
-            "shopping": {"provider": "birmarket" if settings.shopping_provider == "birmarket" else "ebay",
+            "shopping": {"provider": settings.shopping_provider if settings.shopping_provider in {"birmarket", "ebay"} else "buywhere",
                          "mode": settings.shopping_provider,
-                         "authorized_catalog": False if settings.shopping_provider == "birmarket" else bool(settings.ebay_token or settings.ebay_client_id and settings.ebay_client_secret)},
+                         "authorized_catalog": False if settings.shopping_provider == "birmarket" else
+                             bool(settings.ebay_token or settings.ebay_client_id and settings.ebay_client_secret) if settings.shopping_provider == "ebay" else True,
+                         "api_key_required": settings.shopping_provider == "ebay",
+                         "market": settings.buywhere_market if settings.shopping_provider in {"auto", "buywhere"} else None},
             "cinema": {"provider": "CinemaPlus Azerbaijan", "documented_public_api": False,
                        "mode": settings.cinema_provider, "public_listings": settings.cinema_provider != "tmdb",
                        "public_showtimes": settings.cinema_provider != "tmdb", "seat_availability": False,

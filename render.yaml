@@ -17,7 +17,9 @@ services:
       - key: SUPERCHAT_DATA_MODE
         value: providers
       - key: SHOPPING_PROVIDER
-        value: auto
+        value: buywhere
+      - key: BUYWHERE_MARKET
+        value: US
       - key: CINEMA_PROVIDER
         value: auto
       - key: FLIGHT_CURRENCY

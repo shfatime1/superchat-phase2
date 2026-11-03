@@ -34,7 +34,7 @@ def response(request):
 
 def main():
     screenshots = Path("docs/screenshots")
-    with local_server(Settings(routing_mode="offline", ebay_token="browser-test"), response) as url, sync_playwright() as p:
+    with local_server(Settings(routing_mode="offline", shopping_provider="ebay", ebay_token="browser-test"), response) as url, sync_playwright() as p:
         browser = p.chromium.launch(channel="msedge", headless=True)
         try:
             for label, width, height in (("desktop", 1440, 1000), ("mobile", 390, 844)):

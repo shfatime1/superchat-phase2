@@ -169,7 +169,7 @@ class GeminiRouter:
                 "Resolve today/tomorrow/weekdays from this date. Use ISO dates and preserve date expressions. "
                 "Next weekday means that weekday in the following week. Flight currency may be supplied "
                 "as currency (ISO 4217). Flight prices are cached, not confirmed quotes. "
-                "IDs may start AV-, TMDB-, CP-, CPC-, CPS-, or EBAY-; copy the whole ID exactly. "
+                "IDs may start AV-, TMDB-, CP-, CPC-, CPS-, EBAY-, or BW-; copy the whole ID exactly. "
                 "Birmarket catalog requires authorization. CinemaPlus public movie/location pages can provide "
                 "published listings and showtimes; seat availability/reservations are unavailable. "
                 "TMDB is a secondary metadata source, never confirmed CinemaPlus screenings.")

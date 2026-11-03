@@ -25,6 +25,13 @@ requested currency/market is checked through the API response, not assumed conve
 
 ## Birmarket Azerbaijan
 
+**Public-page follow-up, 2026-11-03:** anonymous HTTP reads now verified 24 product
+records with AZN prices, brands, images and official links in a category's HTML, plus
+an individual Product page. Robots blocks keyword-search routes and most query strings.
+The current consumer terms were inspected; permission for external catalog/image reuse
+remains unverified. No active adapter was changed. See the
+[public access investigation](birmarket_public_access.md) for exact findings and limits.
+
 Reviewed the official [consumer platform](https://birmarket.az/),
 [business platform](https://business.birmarket.az/) and
 [knowledge base](https://edu.business.umico.az/). The
@@ -41,11 +48,11 @@ documentation, credentials, permitted scopes and data usage rights before implem
 The adapter reports all catalog capabilities unavailable with `authorization_required`
 and links the verified official website. It has no guessed endpoint or implied working token.
 
-`SHOPPING_PROVIDER=auto` (the new default) or `ebay` enables the official
+`SHOPPING_PROVIDER=ebay` enables the official
 [eBay Browse API search](https://developer.ebay.com/develop/api/buy), preserving eBay identity
 and native currencies. This does not activate or relabel Birmarket data. `birmarket` remains
-an explicit mode for its authorization-only adapter. An existing Render variable set to
-`birmarket` must be changed manually when applying this upgrade.
+an explicit mode for its authorization-only adapter. `auto` now selects BuyWhere, as
+documented below. Existing Render variables must be changed manually when applying the upgrade.
 
 eBay requires a developer application with appropriate production Browse API access.
 Its documented [client credentials flow](https://developer.ebay.com/develop/guides/sell/authorization)
@@ -60,6 +67,48 @@ brand/color aspect names; they are not guessed. Native-currency budgets follow t
 Unknown stock is null; only supplied estimated-availability status is displayed. No delivery
 or final checkout total is inferred. Production access/quotas must be verified for the user's
 account; a free unrestricted Birmarket feed is not established by merchant API availability.
+
+## BuyWhere: active free Shopping source
+
+The [official quickstart](https://buywhere.ai/quickstart),
+[API contract](https://api.buywhere.ai/openapi.json) and
+[terms](https://buywhere.ai/terms) describe a product-catalog API intended for shopping
+applications. The public search operation explicitly has `security: []` and permits
+anonymous requests. No account, API key, retailer scraping or restricted route is needed
+for SuperChat's default search. Terms prohibit bulk replication and reselling API access;
+this integration exposes bounded shopping results, not a raw API proxy or bulk export.
+
+Anonymous live checks on 2026-11-03 returned laptop offers from Newegg, general/outdoor
+products from multiple retailers, and headphones with native USD/SGD prices, image URLs
+and retailer links. The adapter smoke check returned 50 products within a USD budget,
+then verified saved Details and a local cache hit. Some advertised prices were several
+months old; missing price dates were also observed. Retrieval time is therefore kept
+separate from `price_as_of`, with stale/unknown price-date labels in chat and cards.
+
+Search is scoped with the configured catalog market, and uses documented native-currency
+bounds. Application-side checks reject mismatched currencies and out-of-budget prices.
+`local`, `unavailable` and `unknown` delivery-ranking flags are not interpreted as stock.
+No Azerbaijan delivery, inventory or checkout guarantee is made. Category/brand filtering
+and price sorting apply only to returned records; all searches report partial coverage.
+
+The contract marks product-detail/category endpoints as authenticated. Although an initial
+read-only detail probe returned HTTP 200, the implementation does not rely on that
+incidental anonymous access. Without an optional authorized `BUYWHERE_API_KEY`, Details
+and Compare use saved search facts and no authenticated routes are requested. The live
+verification script follows the published security requirements as well.
+
+BuyWhere's quota descriptions vary across its onboarding pages; anonymous rate limits
+should not be treated as unlimited or guaranteed. HTTP 429 and Retry-After are honored.
+The app does not provision accounts/keys or enroll in a paid plan. Affiliate redirects
+returned by the API are preserved and disclosed. Official retailer URLs are retained as
+a fallback when no valid tracked link is supplied; merchant pages are never fetched by
+the backend. No Birmarket labels are attached to these offers.
+
+AS-Mart was also checked because its documentation explicitly supports external catalog
+display; its documented versioned search URLs returned HTTP 404 during direct checks,
+so it was not integrated. Cancork was rejected for limited coverage and all Cancork
+research code was removed at the user's request. The active provider never uses mock
+JSON, captured research files, Google Custom Search, Wildmart or these rejected sources.
 
 ## CinemaPlus Azerbaijan
 

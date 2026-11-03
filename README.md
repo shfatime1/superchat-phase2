@@ -10,6 +10,7 @@ upgrade has not been pushed or deployed. Bonus features remain out of scope.
 | --- | --- | --- |
 | Aviasales / Travelpayouts | Official Data API fares by origin/destination/date, return date, IATA/city resolution, currency, supported filters, sorting and comparisons | Cached search prices, **not live quotes**. No seats, baggage, cabin, group inventory or reservations. |
 | Birmarket Azerbaijan | Provider adapter, capability/status reporting, official website handoff | Public catalog API access was not verified. Search, categories, details, prices, images and stock require authorized documentation/access. |
+| BuyWhere (default Shopping) | Documented public catalog search for electronics and general goods, native-currency prices, images, retailer links, saved Details/Compare, price/category/reported-brand filtering and local price sorting | Anonymous search was verified without a key. Partial catalog snapshots; some prices are old or have no price date. Stock and Azerbaijan delivery unverified. Affiliate links are disclosed. |
 | CinemaPlus Azerbaijan / CineMastercard | **Primary Cinema source:** movies, posters, official movie/schedule links, cinema names/links, dated public showtimes, halls and listed AZN prices; details include runtime, genre and age when published | Reads robots-permitted public HTML, not a documented API. No private endpoints, seat inventory or booking. No invented standalone session URLs. |
 | TMDB (secondary) | Metadata search/discovery/details when the official source fails or `CINEMA_PROVIDER=tmdb` is explicitly selected | Clearly labeled metadata; **never confirmed CinemaPlus screenings**. |
 | eBay (Shopping fallback) | Official Browse search/details, images/links, native-currency budgets, price sorting, category/brand/color refinements, reported item aspects and estimated availability when supplied | Always labeled eBay, never Birmarket. Requires authorized credentials and production API access. Delivery, taxes and checkout totals are unverified. |
@@ -29,9 +30,9 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 $env:GEMINI_API_KEY = "your-gemini-key"
 $env:TRAVELPAYOUTS_API_TOKEN = "your-travelpayouts-token"
-# Real shopping (production eBay developer credentials):
-$env:EBAY_CLIENT_ID = "your-client-id"
-$env:EBAY_CLIENT_SECRET = "your-client-secret"
+# Real shopping: public BuyWhere search needs no key or account.
+$env:SHOPPING_PROVIDER = "buywhere"
+$env:BUYWHERE_MARKET = "US"
 # Optional movie metadata:
 $env:TMDB_READ_ACCESS_TOKEN = "your-tmdb-api-read-access-token"
 python -m app.serve
@@ -54,7 +55,9 @@ and are omitted from settings repr, responses and logs.
 | `FLIGHT_MARKET` | Optional documented market code; blank uses provider default |
 | `TMDB_READ_ACCESS_TOKEN` | Optional TMDB application Read Access Token, enabling metadata fallback |
 | `CINEMA_PROVIDER` | `auto`: official CinemaPlus public pages first, TMDB only on source error if configured; `cinemaplus`: official pages only; `tmdb`: explicit metadata-only mode |
-| `SHOPPING_PROVIDER` | `auto` or `ebay`: the legitimate eBay fallback while public Birmarket catalog access remains unverified; `birmarket`: authorization-only adapter |
+| `SHOPPING_PROVIDER` | `auto` or `buywhere`: public BuyWhere catalog; `ebay`: existing authorized eBay adapter; `birmarket`: authorization-only adapter |
+| `BUYWHERE_MARKET` | `US`; supported catalog markets: `US`, `SG`, `VN`, `TH`, `MY`. This is catalog selection, not the user's address or confirmed Azerbaijan delivery. |
+| `BUYWHERE_API_KEY` | Optional server-side Bearer key. Not needed for public search or saved Details/Compare. Enables authenticated product-detail refresh. No automatic account/key creation. |
 | `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` | Recommended eBay application credentials; OAuth tokens are minted server-side, cached until expiry and renewed automatically |
 | `EBAY_ACCESS_TOKEN` | Optional pre-generated token, taking precedence over client credentials; its expiry must be managed externally |
 | `EBAY_MARKETPLACE` | `EBAY_US` |
@@ -81,9 +84,9 @@ pushed. When applying the upgrade, retain the working Gemini and Travelpayouts v
    Variables, with `COOKIE_SECURE=true`, `SUPERCHAT_DATA_MODE=providers` and
    `SUPERCHAT_ROUTING_MODE=auto` (or `strict`).
 5. Set `CINEMA_PROVIDER=auto`. CinemaPlus public listings require no API token.
-6. Change the existing `SHOPPING_PROVIDER=birmarket` variable to `auto` or `ebay` and add
-   `EBAY_CLIENT_ID` plus `EBAY_CLIENT_SECRET` with production Browse API access. Alternatively
-   use `EBAY_ACCESS_TOKEN`. Without valid credentials Shopping reports a precise setup error.
+6. Set `SHOPPING_PROVIDER=buywhere` and `BUYWHERE_MARKET=US`. Public search needs no
+   shopping credentials or approval. Optional `BUYWHERE_API_KEY` enables detail refresh.
+   To retain eBay explicitly, set `SHOPPING_PROVIDER=ebay` and its authorized credentials.
 7. Optionally retain/add `TMDB_READ_ACCESS_TOKEN` as the secondary metadata fallback.
 
 Changing local defaults or `render.yaml` does not update existing Render Environment Variables.
@@ -119,7 +122,7 @@ flight. Unsupported baggage/cabin filters fail explicitly. AZN budgets cannot fi
 prices. Airline filters accept provider IATA codes. Time filters use the provider timestamp's
 clock time/offset. Passenger counts do not verify inventory or group totals.
 
-CinemaPlus public pages, TMDB and eBay use `live` for fresh successful retrieval and `cached`
+CinemaPlus public pages, TMDB, BuyWhere and eBay use `live` for fresh successful retrieval and `cached`
 for local cache hits. This describes retrieval, not inventory. CinemaPlus rows retain the
 actual published date/time and price. A homepage listing alone does not confirm a dated
 screening; only parsed showtime rows set `confirmed_cinemaplus_screening=true`.
@@ -141,6 +144,28 @@ Category/brand/color filters use eBay's documented refinements, not guessed IDs.
 warnings become explicit errors. Search-time stock filtering is unsupported; details display
 estimated availability only when eBay supplies it. No quantity or delivery promise is inferred.
 
+BuyWhere uses only its documented public `/v1/products/search` API by default. It does
+not scrape retailer pages. Its [public search contract](https://api.buywhere.ai/openapi.json)
+explicitly permits anonymous calls, and its [terms](https://buywhere.ai/terms) describe
+catalog use in shopping applications. Free access has quotas; HTTP 429 honors provider
+backoff. Paid plans and bulk data replication are outside this integration.
+
+Try "Show headphones under 100 USD", "Find laptops", or "Find a backpack".
+Native price bounds are sent upstream and checked against the actual response currency;
+AZN budgets and stock/color filters return explicit unsupported-filter messages. Category
+and reported-brand filters, comparisons and price sorting cover only the first 50 returned
+records. They do not establish market-wide absence or a global cheapest offer. Stock remains
+unknown: BuyWhere's `local`/`unavailable` delivery ranking is not stock inventory.
+
+Product `price_as_of` is distinct from the retrieval timestamp. Dates older than 24 hours
+are marked stale, missing dates stay unknown, and no timestamp or exchange rate is invented.
+BuyWhere may earn a commission through tracked retailer links. Without a key, Details/Compare
+use the clearly labeled saved search snapshot; authenticated detail/category routes are
+never requested. With an optional authorized key, Details can refresh the selected item.
+
+`auto` now selects BuyWhere even if old eBay credentials remain in the environment.
+Existing eBay behavior remains available with explicit `SHOPPING_PROVIDER=ebay`.
+
 No active provider path reads `data/*.json`. Original JSON and mock domain services remain
 only for explicit `SUPERCHAT_DATA_MODE=fixtures`. They are never an API failure fallback.
 Fixture mode retains the original demonstration operations.
@@ -153,7 +178,7 @@ python -m pytest -q
 ```
 
 Provider tests use `httpx.MockTransport`, placeholder credentials and no live API calls.
-They cover all three domain adapters, optional eBay, IATA ambiguity, currency/filters,
+They cover all three domain adapters, BuyWhere, optional eBay, IATA ambiguity, currency/filters,
 cache expiry, retries/timeouts/rate limits, malformed data, authorization boundaries,
 metadata separation, comparisons/state/history and startup without fixtures. Existing
 regression tests explicitly select fixture mode.
@@ -169,6 +194,11 @@ image/details cards on desktop/mobile using contract stubs. Its `cinemaplus-*.pn
 Optional live read-only CinemaPlus verification:
 `python scripts/inspect_cinemaplus_public.py --verify-provider`. This reads robots-permitted
 public pages only. It needs network access but no API credentials. Automated tests remain offline.
+
+Optional live Shopping verification: `python scripts/verify_buywhere.py --provider`.
+It checks real anonymous product search, native-currency budgets, saved Details and caching.
+`python -m scripts.shopping_browser_smoke` checks Shopping cards, images, retailer links,
+stale-price labels, Details and Compare on desktop/mobile using offline API contract stubs.
 
 ## TMDB attribution
 

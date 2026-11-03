@@ -73,6 +73,9 @@ class ProductOffer(Schema):
     condition: str | None = None
     availability_status: str | None = None
     in_stock: bool | None = None
+    merchant: str | None = None
+    price_as_of: datetime | None = None
+    price_stale: bool | None = None
 
 
 class MovieMetadata(Schema):

@@ -20,7 +20,8 @@ WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven"
 NUMBER = r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
 logger = logging.getLogger(__name__)
 PRODUCTS = ("headphones", "earbuds", "laptops", "laptop", "smartphone", "phone", "smartwatch", "speaker",
-            "running shoes", "backpack", "coffee machine", "board game")
+            "running shoes", "backpack", "coffee machine", "board game", "coffee maker", "vacuum cleaner",
+            "keyboard", "monitor", "tablet", "boots", "toys", "desk chair")
 
 
 def number(value):
@@ -36,7 +37,7 @@ class LocalRouter:
         found = []
         if re.search(r"\b(flights?|airlines?|aviasales|baggage|passengers?|f\d{3}|av-[a-f0-9]{16})\b", text):
             found.append("flights")
-        if re.search(r"\b(shopping|birmarket|ebay|products?|cart|stock|p\d{3})\b", text) or any(word in text for word in PRODUCTS):
+        if re.search(r"\b(shopping|birmarket|ebay|buywhere|bw-[a-z0-9_-]+|products?|cart|stock|p\d{3})\b", text) or any(word in text for word in PRODUCTS):
             found.append("shopping")
         if re.search(r"\b(cinema\w*|tmdb-\d+|cp-[\w-]+|movies?|films?|showtimes?|tickets?|playing|[msc]\d{3}|sci-fi|comedy|horror)\b", text):
             found.append("cinema")
@@ -104,10 +105,11 @@ class LocalRouter:
         for pattern, field in ((r"\bav-[a-f0-9]{16}\b", "flight_ids"),
                                (r"\btmdb-\d+\b", "movie_ids"),
                                (r"\bcp-[\w-]+\b", "movie_ids"),
+                               (r"\bbw-[a-z0-9_-]+\b", "product_ids"),
                                (r"\bebay-v1\|\d+\|\d+\b", "product_ids")):
             matches = re.findall(pattern, text)
             if matches:
-                p[field] = [value.replace("av-", "AV-").replace("tmdb-", "TMDB-").replace("cp-", "CP-").replace("ebay-", "EBAY-") for value in matches]
+                p[field] = [value.replace("av-", "AV-").replace("tmdb-", "TMDB-").replace("cp-", "CP-").replace("ebay-", "EBAY-").replace("bw-", "BW-", 1) for value in matches]
                 ids.extend(matches)
         if ids:
             action = "details"
@@ -139,7 +141,7 @@ class LocalRouter:
             action_words = re.findall(r"\b(add|remove|book|reserve)\b", text)
             if len(action_words) != 1:
                 return None
-            action_text = re.sub(r"\b(?:av-[a-f0-9]{16}|tmdb-\d+|cp-[\w-]+|ebay-v1\|\d+\|\d+)\b", " ", text)
+            action_text = re.sub(r"\b(?:av-[a-f0-9]{16}|tmdb-\d+|cp-[\w-]+|bw-[a-z0-9_-]+|ebay-v1\|\d+\|\d+)\b", " ", text)
             remainder = re.sub(r"\b[fpmsc]\d{3}\b", " ", action_text)
             quantity_text = re.sub(r"\b(?:first|second|third|fourth|cheaper|cheapest) one\b", " ", remainder)
             if len(re.findall(r"\b" + NUMBER + r"\b", quantity_text)) > 1:
@@ -217,7 +219,7 @@ class LocalRouter:
                 if re.search(r"\b" + row.flight_number.casefold() + r"\b", text):
                     p["flight_number"] = row.flight_number
         elif domain == "shopping":
-            currency = re.search(r"\b(usd|eur|gbp|rub|try|aed)\b", text)
+            currency = re.search(r"\b(usd|eur|gbp|rub|try|aed|sgd|vnd|thb|myr)\b", text)
             if currency:
                 p["currency"] = currency[1].upper()
                 for old, new in (("min_price_azn", "min_price"), ("max_price_azn", "max_price")):

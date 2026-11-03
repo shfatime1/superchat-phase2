@@ -8,6 +8,7 @@ from app.domains.common import DomainIssue
 from app.domains.engine import DomainEngine
 from app.providers.aviasales import AviasalesProvider
 from app.providers.birmarket import BirmarketProvider
+from app.providers.buywhere import BuyWhereProvider
 from app.providers.cinema_service import CinemaProviderService
 from app.providers.ebay import EbayProvider
 from app.providers.http import ProviderFailure, ProviderHTTP
@@ -24,11 +25,16 @@ class ProviderDomainEngine(DomainEngine):
         self.inventory = NoInventory()
         self.http = http or ProviderHTTP(timeout=settings.provider_timeout_seconds,
             retries=settings.provider_retries, ttl=settings.provider_cache_ttl)
-        if settings.shopping_provider not in {"auto", "birmarket", "ebay"}:
-            raise ValueError("SHOPPING_PROVIDER must be auto, birmarket, or ebay")
+        if settings.shopping_provider not in {"auto", "birmarket", "ebay", "buywhere"}:
+            raise ValueError("SHOPPING_PROVIDER must be auto, birmarket, ebay, or buywhere")
         flights = AviasalesProvider(self.http, settings.travelpayouts_token, settings.flight_currency, settings.flight_market)
-        shopping = BirmarketProvider() if settings.shopping_provider == "birmarket" else EbayProvider(
-            self.http, settings.ebay_token, settings.ebay_marketplace, settings.ebay_client_id, settings.ebay_client_secret)
+        if settings.shopping_provider == "birmarket":
+            shopping = BirmarketProvider()
+        elif settings.shopping_provider == "ebay":
+            shopping = EbayProvider(self.http, settings.ebay_token, settings.ebay_marketplace,
+                                   settings.ebay_client_id, settings.ebay_client_secret)
+        else:
+            shopping = BuyWhereProvider(self.http, settings.buywhere_token, settings.buywhere_market)
         self.services = {domain: ProviderService(domain, provider) for domain, provider in
                          (("flights", flights), ("shopping", shopping))}
         self.services["cinema"] = CinemaProviderService(self.http, settings)
@@ -53,7 +59,7 @@ class ProviderService:
             if self.domain == "shopping" and isinstance(self.provider, BirmarketProvider):
                 response = self.provider.authorization_required()
             else:
-                response = unavailable(self.provider.name, "https://www.aviasales.com/" if self.domain == "flights" else "https://www.ebay.com/",
+                response = unavailable(self.provider.name, "https://www.aviasales.com/" if self.domain == "flights" else getattr(self.provider, "website", "https://www.ebay.com/"),
                     "This provider cannot verify availability or perform reservations, purchases or cart operations.", "unsupported_operation")
             return self.outcome(action, key, response)
         if action not in {"search", "filter", "sort", "resume", "details", "compare"}:
@@ -105,7 +111,8 @@ class ProviderService:
                     except ProviderFailure as exc:
                         return self.outcome(action, key, unavailable(self.provider.name, source.source_url,
                             "Cannot validate the selected route. Please supply an explicit IATA code.", exc.code, exc.retry_after))
-                if self.domain == "shopping" and isinstance(self.provider, EbayProvider) and action != "compare":
+                if self.domain == "shopping" and (isinstance(self.provider, EbayProvider) or
+                    isinstance(self.provider, BuyWhereProvider) and self.provider.token) and action != "compare":
                     if len(ids) > 4:
                         raise DomainIssue("choose_item")
                     responses = [await self.provider.details(i) for i in ids]
