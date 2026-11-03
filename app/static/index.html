@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -8,54 +8,69 @@
   <title>SuperChat — A little help for your next plan</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/ui.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
   <button class="scrim" id="scrim" aria-label="Close sidebar" hidden></button>
   <aside class="sidebar" id="sidebar" aria-label="Conversation navigation">
-    <a class="brand" href="/" aria-label="SuperChat home"><span class="brand-mark">S<span>✦</span></span><span>SuperChat<span class="brand-dot">.</span></span></a>
-    <button class="new-chat" id="new-chat"><span class="icon" aria-hidden="true">＋</span> New conversation <span class="new-shortcut" aria-hidden="true">↗</span></button>
-    <div class="sidebar-label">YOUR CONVERSATIONS</div>
+    <a class="brand" href="/" aria-label="SuperChat home"><span class="brand-mark" aria-hidden="true">▢</span><span>SuperChat <span class="brand-live">Live</span></span></a>
+    <button class="new-chat" id="new-chat"><span class="icon" aria-hidden="true">▧</span><span data-i18n="New chat">New chat</span><span class="new-shortcut" aria-hidden="true">＋</span></button>
+    <div class="sidebar-label" data-i18n="YOUR ASSISTANTS">YOUR ASSISTANTS</div>
+    <nav class="assistant-nav" aria-label="Assistants" data-i18n-aria="Assistants">
+      <button class="assistant-tab active" data-assistant="flights" aria-pressed="true"><svg class="service-icon flights-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m21 3-7 18-3-8-8-3 18-7ZM11 13 21 3"/></svg><span data-i18n="Flights">Flights</span><span class="tab-check" aria-hidden="true">✓</span></button>
+      <button class="assistant-tab" data-assistant="shopping" aria-pressed="false"><svg class="service-icon shopping-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14l1 13H4L5 7ZM8 7V5a4 4 0 0 1 8 0v2M9 11a3 3 0 0 0 6 0"/></svg><span data-i18n="Shopping">Shopping</span><span class="tab-check" aria-hidden="true">✓</span></button>
+      <button class="assistant-tab" data-assistant="cinema" aria-pressed="false"><svg class="service-icon cinema-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v10H4V10ZM3 5l16-3 1 5-16 3-1-5ZM7 4l3 4m3-5 3 4"/></svg><span data-i18n="Cinema">Cinema</span><span class="tab-check" aria-hidden="true">✓</span></button>
+    </nav>
+    <div class="sidebar-label history-label" data-i18n="RECENT CHATS">RECENT CHATS</div>
     <nav id="conversation-list" class="conversation-list" aria-label="Saved conversations"></nav>
-    <div id="empty-history" class="empty-history">Your next great plan<br>starts with a conversation.</div>
+    <div id="empty-history" class="empty-history" data-i18n="Your conversations will appear here.">Your conversations will appear here.</div>
     <div class="sidebar-bottom">
-      <div class="workspace-note"><span class="small-spark" aria-hidden="true">✦</span><div><strong>One chat. More possibilities.</strong><p>Flights, shopping & cinema</p></div></div>
-      <button class="clear-history" id="clear-history">Clear saved conversations</button>
-      <div class="profile"><span class="avatar">Y</span><span>You<span class="profile-sub">Personal workspace</span></span><span class="privacy-dot" title="Private to this browser">●</span></div>
+      <div class="workspace-note"><span class="status-dot" aria-hidden="true"></span><span data-i18n="One chat. Three worlds.">One chat. Three worlds.</span></div>
+      <button class="theme-setting" id="theme-toggle-sidebar" type="button"><span class="theme-icon" aria-hidden="true">☼</span><span data-theme-label>Light mode</span></button>
+      <button class="clear-history" id="clear-history" data-i18n="Clear saved conversations">Clear saved conversations</button>
+      <div class="sidebar-copyright">© 2026 SuperChat Live</div>
     </div>
   </aside>
   <main class="main">
     <header class="topbar">
-      <div class="header-left"><button class="icon-button mobile-menu" id="menu-button" aria-label="Open sidebar" aria-expanded="false">☰</button><span class="workspace-title">Your everyday copilot</span><span class="beta-tag">PHASE 2</span></div>
-      <div class="header-right"><span id="connection" class="connection"><span></span> Ready to help</span><button class="icon-button" id="info-button" aria-label="About this demo">ⓘ</button></div>
+      <div class="header-left"><button class="icon-button mobile-menu" id="menu-button" aria-label="Open sidebar" data-i18n-aria="Open sidebar" aria-expanded="false">☰</button><span class="workspace-title">SuperChat Live <span class="title-chevron" aria-hidden="true">⌄</span></span></div>
+      <div class="header-right"><span id="connection" class="connection"><span></span><span data-i18n="Ready to help">Ready to help</span></span><label class="language-control"><span class="sr-only" data-i18n="Interface language">Interface language</span><select id="page-language" aria-label="Interface language" data-i18n-aria="Interface language"><option value="az">AZ</option><option value="en" selected>EN</option><option value="ru">RU</option></select></label><button class="icon-button" id="theme-toggle" type="button" aria-label="Light mode">☼</button><button class="icon-button" id="info-button" aria-label="About SuperChat" data-i18n-aria="About SuperChat">ⓘ</button></div>
     </header>
     <div class="scroll-area" id="scroll-area">
       <section class="welcome" id="welcome">
-        <div class="welcome-emblem" aria-hidden="true"><span>✦</span><i></i><b>✧</b></div>
-        <div class="eyebrow">A LITTLE HELP. A LOT OF POSSIBILITIES.</div>
-        <h1>What’s your next <em>plan?</em></h1>
-        <p class="welcome-description">Somewhere to go. Something to find. A film to get lost in.<br>Let’s make it happen, one conversation at a time.</p>
+        <div class="eyebrow" data-i18n="ONE CHAT. THREE WORLDS.">ONE CHAT. THREE WORLDS.</div>
+        <h1 data-i18n="What’s on your mind?">What’s on your mind?</h1>
+        <p class="welcome-description" id="welcome-description" data-i18n="A little closer to your next destination.">A little closer to your next destination.</p>
         <div class="suggestions">
           <button class="suggestion" data-prompt="Find flights from Baku to Istanbul on Friday, cheapest first."><span class="tile-icon flights-icon" aria-hidden="true">↗</span><span class="tile-category">TAKE OFF</span><strong>Find your next escape</strong><span class="tile-copy">Baku to Istanbul this Friday</span><span class="tile-arrow" aria-hidden="true">↗</span></button>
           <button class="suggestion" data-prompt="Show me wireless headphones."><span class="tile-icon shopping-icon" aria-hidden="true">♧</span><span class="tile-category">FIND YOUR THING</span><strong>A little upgrade</strong><span class="tile-copy">Explore wireless headphones</span><span class="tile-arrow" aria-hidden="true">↗</span></button>
           <button class="suggestion" data-prompt="What movies are playing tonight?"><span class="tile-icon cinema-icon" aria-hidden="true">▤</span><span class="tile-category">MAKE A NIGHT OF IT</span><strong>Something worth watching</strong><span class="tile-copy">See what’s playing tonight</span><span class="tile-arrow" aria-hidden="true">↗</span></button>
         </div>
-        <button class="mixed-prompt" data-prompt="Find a flight from Baku to Istanbul on Friday and a backpack under 100 AZN."><span aria-hidden="true">✧</span> A trip and a new backpack? Ask for both. <span aria-hidden="true">→</span></button>
+        <button class="mixed-prompt" data-prompt="Find a flight from Baku to Istanbul on Friday and a backpack under 100 USD."><span data-i18n="Have more than one plan? Ask for both.">Have more than one plan? Ask for both.</span><span aria-hidden="true">↗</span></button>
       </section>
       <section id="messages" class="messages" aria-label="Conversation" aria-live="polite" aria-relevant="additions"></section>
-      <div id="loading" class="loading" role="status" hidden><span class="assistant-avatar" aria-hidden="true">✦</span><span>Putting your plan together<span class="dots"><i></i><i></i><i></i></span></span></div>
+      <div id="loading" class="loading" role="status" hidden><span class="assistant-avatar" aria-hidden="true">✦</span><span data-i18n="Putting your plan together">Putting your plan together</span><span class="dots"><i></i><i></i><i></i></span></div>
     </div>
     <div class="composer-zone">
       <div id="notice" class="notice" role="status" hidden></div>
       <div id="error" class="error-banner" role="alert" hidden></div>
       <form id="chat-form" class="composer">
-        <label class="sr-only" for="message-input">Message SuperChat</label>
-        <textarea id="message-input" rows="1" maxlength="8000" placeholder="Ask about flights, products, or a night at the movies…" required></textarea>
-        <div class="composer-bottom"><span class="composer-hint"><span aria-hidden="true">✦</span> All your plans, one place</span><button id="send-button" class="send-button" type="submit" aria-label="Send message" disabled>↑</button></div>
+        <label class="sr-only" for="message-input" data-i18n="Message SuperChat">Message SuperChat</label>
+        <textarea id="message-input" rows="2" maxlength="8000" placeholder="Where would you like to go?" required></textarea>
+        <div class="composer-bottom"><span class="composer-hint"><span aria-hidden="true">✦</span><span id="composer-domain" data-i18n="Flights">Flights</span><span class="composer-shortcut" data-i18n="Enter to send">Enter to send</span></span><button id="send-button" class="send-button" type="submit" aria-label="Send message" data-i18n-aria="Send message" disabled>↑</button></div>
       </form>
-      <div class="composer-footer"><span>Provider data · Cached flight prices · Availability requires provider verification.</span><span class="reference-date">Asia/Baku</span></div>
+      <div class="composer-footer"><span data-i18n="Provider data · Cached flight prices · Verify availability with the provider.">Provider data · Cached flight prices · Verify availability with the provider.</span><span class="reference-date">Asia/Baku</span></div>
     </div>
   </main>
-  <dialog id="info-dialog"><button class="icon-button dialog-close" id="close-info" aria-label="Close information">×</button><span class="eyebrow">MEET SUPERCHAT</span><h2>Three possibilities.<br>One conversation.</h2><p>Search flights, discover products, or plan a film night. Switch topics whenever you like — each conversation remembers your plans.</p><p>Flight prices come from the Aviasales Data API cache. CinemaPlus movies and schedules come from its robots-permitted official public pages. Birmarket automated reuse permission is unconfirmed. BuyWhere supplies separately labeled product catalog offers with price dates; eBay remains optional. Product links may earn BuyWhere an affiliate commission. TMDB is a secondary metadata source. Seats, reservations and purchases are unavailable.</p><p>When Gemini is unavailable, a limited local assistant handles clear English requests and asks you to clarify anything uncertain.</p><p class="dialog-note">Saved chats stay in this browser. Server context resets when the backend restarts. No account or payment details are needed.</p><p class="dialog-note">This product uses the TMDB API but is not endorsed or certified by TMDB. <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer"><img class="tmdb-logo" alt="TMDB" src="https://www.themoviedb.org/assets/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" width="92"></a> supplies optional movie metadata.</p></dialog>
+  <dialog id="info-dialog">
+    <button class="icon-button dialog-close" id="close-info" aria-label="Close information" data-i18n-aria="Close information">×</button>
+    <span class="eyebrow" data-i18n="MEET SUPERCHAT">MEET SUPERCHAT</span><h2 data-i18n="Three possibilities. One conversation.">Three possibilities. One conversation.</h2>
+    <p data-i18n="Search flights, discover products, or plan a film night. Each conversation remembers your plans.">Search flights, discover products, or plan a film night. Each conversation remembers your plans.</p>
+    <p data-i18n="Aviasales fares are cached. CinemaPlus supplies official listings and schedules. BuyWhere supplies product offers with price dates; links may earn BuyWhere a commission. eBay and TMDB are optional. Birmarket reuse permission is unconfirmed. Seats, purchases and reservations are unavailable.">Aviasales fares are cached. CinemaPlus supplies official listings and schedules. BuyWhere supplies product offers with price dates; links may earn BuyWhere a commission. eBay and TMDB are optional. Birmarket reuse permission is unconfirmed. Seats, purchases and reservations are unavailable.</p>
+    <p data-i18n="When Gemini is unavailable, a limited local assistant handles clear English requests.">When Gemini is unavailable, a limited local assistant handles clear English requests.</p>
+    <p class="dialog-note" data-i18n="Saved chats stay in this browser. Server context resets when the backend restarts.">Saved chats stay in this browser. Server context resets when the backend restarts.</p>
+    <p class="dialog-note"><span data-i18n="This product uses the TMDB API but is not endorsed or certified by TMDB.">This product uses the TMDB API but is not endorsed or certified by TMDB.</span> <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB ↗</a></p>
+  </dialog>
 </body>
 </html>

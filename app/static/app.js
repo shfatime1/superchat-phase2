@@ -8,7 +8,10 @@ const money = value => Number(value).toLocaleString("en-US", {minimumFractionDig
 function node(tag, className, text) {
   const element = document.createElement(tag);
   if (className) element.className = className;
-  if (text !== undefined) element.textContent = String(text);
+  if (text !== undefined) {
+    if (/user-bubble|assistant-text/.test(className || "")) element.textContent = String(text);
+    else window.SuperChatUI.setText(element, String(text));
+  }
   return element;
 }
 function button(text, action, className = "small-button") {
@@ -26,7 +29,7 @@ function save() {
     sessionStorage.setItem(storageKey + ".active", activeId || "");
   } catch { showNotice("Browser storage is full or unavailable. This chat works, but new messages may not survive a refresh."); }
 }
-function showNotice(text) { $("notice").textContent = text; $("notice").hidden = !text; }
+function showNotice(text) { $("notice").replaceChildren(node("span", "", text)); $("notice").hidden = !text; }
 function clearError() { $("error").replaceChildren(); $("error").hidden = true; }
 function showError(text, retry) {
   const target = $("error");
@@ -68,7 +71,8 @@ function renderSidebar() {
   list.hidden = !saved.length;
   saved.forEach(chat => {
     const item = button("", () => selectConversation(chat.id), "conversation-button" + (chat.id === activeId ? " active" : ""));
-    item.append(node("span", "conversation-symbol", "◌"), node("span", "", chat.title));
+    const title = node("span"); title.textContent = chat.title;
+    item.append(node("span", "conversation-symbol", "◌"), title);
     item.title = chat.title;
     if (chat.id === activeId) item.setAttribute("aria-current", "page");
     list.append(item);
@@ -180,7 +184,7 @@ function renderResult(result) {
         const label = node("label", "card-meta"), checkbox = node("input"); checkbox.type = "checkbox";
         checkbox.setAttribute("aria-label", "Select " + row.id + " for comparison");
         checkbox.addEventListener("change", () => { checkbox.checked ? selected.add(row.id) : selected.delete(row.id); compareButton.dataset.unavailable = String(selected.size < 2); compareButton.disabled = busy || !!current()?.archived || selected.size < 2; });
-        label.append(checkbox, document.createTextNode(" Compare")); card.append(label);
+        label.append(checkbox, node("span", "", " Compare")); card.append(label);
       }
       grid.append(card);
     }); section.append(grid);
@@ -293,7 +297,7 @@ function renderProviderResult(result) {
         check.checked ? selected.add(row.id) : selected.delete(row.id);
         grid.compareButton.disabled = selected.size < 2; grid.compareButton.dataset.unavailable = String(selected.size < 2);
       });
-      label.append(check, document.createTextNode(" Compare")); card.append(label);
+      label.append(check, node("span", "", " Compare")); card.append(label);
     }
     grid.append(card);
   });
@@ -326,7 +330,11 @@ function renderTurn(turn) {
   if (turn.routing?.source === "local") heading.append(node("span", "mode-badge", "Local assistant"));
   block.append(heading);
   if (!turn.results?.length || (turn.routing?.language && !["en", "English"].includes(turn.routing.language))) block.append(node("div", "assistant-text", turn.content));
-  else block.append(node("div", "assistant-text", turn.results.some(r => r.data?.provider_error) ? "Here’s the current provider status." : turn.results.some(r => r.status === "clarification" || r.status === "error") ? "Let’s check a couple of details." : turn.results.some(r => r.code === "reserved") ? "Your mock reservation is ready." : "Here’s what I found for you."));
+  else {
+    const intro = node("div", "assistant-text");
+    window.SuperChatUI.setText(intro, turn.results.some(r => r.data?.provider_error) ? "Here’s the current provider status." : turn.results.some(r => r.status === "clarification" || r.status === "error") ? "Let’s check a couple of details." : turn.results.some(r => r.code === "reserved") ? "Your mock reservation is ready." : "Here’s what I found for you.");
+    block.append(intro);
+  }
   (turn.results || []).forEach(result => block.append(renderResult(result)));
   if (turn.results?.length) {
     const details = node("details", "card-meta"); details.append(node("summary", "", "Read full response"), node("div", "assistant-text", turn.content)); block.append(details);
@@ -380,7 +388,7 @@ async function send(text, retry = false) {
     const answer = await api("/api/chat", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(chat.pending), signal: controller.signal});
     chat.sessionId = answer.session_id; chat.turns = answer.state.history; chat.pending = null; clearError(); save();
     $("connection").classList.toggle("degraded", answer.routing.source === "local");
-    $("connection").replaceChildren(node("span"), document.createTextNode(answer.routing.source === "local" ? "Local assistant" : "Connected to Gemini"));
+    $("connection").replaceChildren(node("span"), node("span", "", answer.routing.source === "local" ? "Local assistant" : "Connected to Gemini"));
   } catch (error) {
     if (error.status === 404) { chat.archived = true; chat.pending = null; save(); }
     else if ([409, 422].includes(error.status)) {
@@ -402,21 +410,21 @@ $("info-button").addEventListener("click", () => $("info-dialog").showModal());
 $("close-info").addEventListener("click", () => $("info-dialog").close());
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeSidebar(); });
 $("clear-history").addEventListener("click", () => {
-  if (busy || !confirm("Clear saved conversations from this browser?")) return;
+  if (busy || !confirm(window.SuperChatUI.translate("Clear saved conversations from this browser?"))) return;
   conversations = []; activeId = null; clearError(); showNotice(""); save(); newConversation();
 });
 async function init() {
   setBusy(false);
   try {
     const client = await api("/api/client"); storageKey = "superchat.v1." + client.namespace;
-    document.querySelector(".reference-date").textContent = `Reference date · ${client.reference_date} · Asia/Baku`;
+    window.SuperChatUI.setText(document.querySelector(".reference-date"), `Reference date · ${client.reference_date} · Asia/Baku`);
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || "[]");
       conversations = Array.isArray(saved) ? saved.filter(chat => chat.id && Array.isArray(chat.turns)) : [];
       activeId = sessionStorage.getItem(storageKey + ".active") || conversations[0]?.id;
     } catch { conversations = []; }
     ready = true;
-    if (client.routing_mode === "offline") { $("connection").replaceChildren(node("span"), document.createTextNode("Local assistant")); $("connection").classList.add("degraded"); }
+    if (client.routing_mode === "offline") { $("connection").replaceChildren(node("span"), node("span", "", "Local assistant")); $("connection").classList.add("degraded"); }
     if (!current()) newConversation(); else render();
     await restoreSession(); input.focus();
   } catch { showError("SuperChat could not connect to the backend. Check that it is running, then reload this page.", () => location.reload()); }
