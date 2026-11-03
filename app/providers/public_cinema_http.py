@@ -9,6 +9,7 @@ import httpx
 
 from app.providers.http import Document, ProviderFailure
 from app.providers.models import utcnow
+from app.diagnostics import cache_context, current, http_call, http_status, http_attempt
 
 ROOT = "https://cinemastercard.az"
 AGENT = "SuperChat/2.0 (public cinema listings; cached, read-only)"
@@ -93,12 +94,20 @@ class PublicCinemaPages:
         self._spacing = max(1, delay)
         with self._lock:
             self._next_request = max(self._next_request, self._last_start + self._spacing)
-        return await self._fetch(url.split("#")[0], min(self.http.ttl, 900))
+        return await self._fetch(url.split("#")[0], self.http.ttl)
 
     async def _fetch(self, url, ttl):
+        with http_call("GET", url) as call:
+            doc = await self._fetch_scoped(url, ttl)
+            call["cache"] = "hit" if doc.cached else "miss"
+            return doc
+
+    async def _fetch_scoped(self, url, ttl):
+        scope, refresh = cache_context()
+        key = (scope, url)
         with self._lock:
-            entry = self._cache.get(url)
-            if entry and entry[0] > self.http.clock():
+            entry = self._cache.get(key)
+            if entry and entry[0] > self.http.clock() and not refresh:
                 return Document(entry[1].data, entry[1].fetched_at, True)
             if self._cooldown_until > self.http.clock():
                 raise ProviderFailure("rate_limited", int(self._cooldown_until - self.http.clock()) + 1)
@@ -111,12 +120,16 @@ class PublicCinemaPages:
                                      follow_redirects=False, headers={"User-Agent": AGENT}) as client:
             for attempt in range(self.http.retries + 1):
                 try:
+                    if current.get():
+                        current.get().check()
+                    http_attempt()
                     response = await client.get(url)
                 except httpx.RequestError:
                     if attempt < self.http.retries:
                         await self.http.sleep(max(self._spacing, 0.5 * 2 ** attempt))
                         continue
                     raise ProviderFailure("network_error") from None
+                http_status(response.status_code)
                 if response.status_code in {401, 403}:
                     raise ProviderFailure("public_access_restricted")
                 if response.status_code == 429:
@@ -136,11 +149,17 @@ class PublicCinemaPages:
                     raise ProviderFailure("invalid_response")
                 doc = Document(response.text, utcnow())
                 with self._lock:
-                    self._cache[url] = (self.http.clock() + ttl, doc)
+                    self._cache[key] = (self.http.clock() + ttl, doc)
                     if len(self._cache) > 128:
                         del self._cache[next(iter(self._cache))]
                 return doc
 
     def discard(self):
         with self._lock:
-            self._cache.clear()
+            scope, _ = cache_context()
+            if scope is None:
+                self._cache.clear()
+            else:
+                for key in list(self._cache):
+                    if key[0] == scope:
+                        del self._cache[key]

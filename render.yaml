@@ -29,7 +29,11 @@ services:
       - key: PROVIDER_RETRIES
         value: "2"
       - key: PROVIDER_CACHE_TTL
-        value: "300"
+        value: "1800"
+      - key: CHAT_TIMEOUT_SECONDS
+        value: "120"
+      - key: CHAT_RATE_LIMIT
+        value: "30"
       - key: SUPERCHAT_ROUTING_MODE
         value: auto
       - key: COOKIE_SECURE

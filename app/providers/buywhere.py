@@ -133,6 +133,8 @@ class BuyWhereProvider:
                 terms.append(refinement)
         params = {"q": " ".join(terms), "country_code": self.market, "deliver_to": self.market,
                   "include_unshippable": "false", "limit": 50, "mode": "keyword"}
+        if p.offset is not None:
+            params["offset"] = p.offset
         if p.currency:
             params["currency"] = p.currency.upper()
         for field in ("min_price", "max_price"):
@@ -176,7 +178,11 @@ class BuyWhereProvider:
                     return self.failure("currency_required")
                 known.sort(key=lambda r: r.price.amount, reverse=p.sort_by == "price_desc")
                 rows = known + [r for r in rows if not r.price]
-            return self.result(doc, rows, upstream_cached=meta.get("cached") is True)
+            result = self.result(doc, rows, upstream_cached=meta.get("cached") is True)
+            more = meta.get("has_more") is True and bool(doc.data["data"]) and (p.offset or 0) < 9950
+            result.pagination = {"offset": p.offset or 0, "limit": 50, "has_more": more,
+                                 "next_offset": (p.offset or 0) + 50 if more else None}
+            return result
         except ProviderFailure as exc:
             if exc.code in {"invalid_response", "upstream_degraded"}:
                 self.http.discard()

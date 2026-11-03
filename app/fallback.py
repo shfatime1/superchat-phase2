@@ -79,7 +79,7 @@ class LocalRouter:
         if not domains:
             if re.search(r"\b(weather|president|politics|recipe|code|poem|football)\b", text):
                 return unresolved("out_of_scope")
-            supported = re.search(r"\b(cheaper|cheapest|first|second|third|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|direct|compare|book|reserve|add|remove|under|details|available|any brand)\b", text)
+            supported = re.search(r"\b(cheaper|cheapest|first|second|third|tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|direct|compare|book|reserve|add|remove|under|details|available|any brand|next page|more results)\b", text)
             supported = supported or re.fullmatch(NUMBER + r"(?:\s+(?:please|seats|units))?\.?", text)
             supported = supported or re.fullmatch(r"(?:from )?(?:baku|istanbul|dubai|moscow|tbilisi|tashkent|gyd|ist|dxb|svo|tbs|tas)\.?", text)
             if not state.last_active_domain or not supported:

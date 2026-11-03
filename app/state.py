@@ -45,6 +45,7 @@ class HistoryTurn(Schema):
     content: str
     routing: RoutingResult | None = None
     results: list[DomainResult] = Field(default_factory=list)
+    debug: dict[str, JsonValue] | None = None
 
 
 class SessionState(Schema):
@@ -110,6 +111,10 @@ def apply_routing(state: SessionState, result: RoutingResult) -> None:
                 domain_state.last_showtime_ids = []
                 domain_state.selected_showtime_ids = []
         previous = {} if reset else domain_state.parameters.model_dump()
+        if extracted.domain == "shopping" and extracted.parameters.offset is None and extracted.intent in {"search", "filter", "sort", "follow_up"}:
+            if any(value is not None and previous.get(key) != value for key, value in extracted.parameters.model_dump().items()
+                   if key in {"query", "category", "brand", "color", "currency", "min_price", "max_price", "min_price_azn", "max_price_azn", "sort_by"}):
+                previous.pop("offset", None)
         if extracted.domain == "shopping" and extracted.parameters.currency:
             old_currency = previous.get("currency") or ("AZN" if any(previous.get(k) is not None for k in ("min_price_azn", "max_price_azn")) else None)
             if old_currency and old_currency.upper() != extracted.parameters.currency.upper():

@@ -16,6 +16,7 @@ import time
 import httpx
 
 from app.providers.models import utcnow
+from app.diagnostics import cache_context, current, http_call, http_status, http_attempt
 
 
 class ProviderFailure(Exception):
@@ -32,7 +33,7 @@ class Document:
 
 
 class ProviderHTTP:
-    def __init__(self, timeout=8.0, retries=2, ttl=300, capacity=256, transport=None,
+    def __init__(self, timeout=8.0, retries=2, ttl=1800, capacity=256, transport=None,
                  clock=time.monotonic, sleep=asyncio.sleep):
         self.timeout, self.retries, self.ttl, self.capacity = timeout, retries, ttl, capacity
         self.transport, self.clock, self.sleep = transport, clock, sleep
@@ -49,12 +50,19 @@ class ProviderHTTP:
                 return 30
 
     async def get(self, url, *, params=None, headers=None, ttl=None):
+        with http_call("GET", url) as call:
+            doc = await self._get(url, params=params, headers=headers, ttl=ttl)
+            call["cache"] = "hit" if doc.cached else "miss"
+            return doc
+
+    async def _get(self, url, *, params=None, headers=None, ttl=None):
         # Headers participate in isolation, but credentials are never returned or logged.
-        key = (url, str(httpx.QueryParams(params)), tuple(sorted((headers or {}).items())))
+        scope, refresh = cache_context()
+        key = (scope, url, str(httpx.QueryParams(sorted(httpx.QueryParams(params).multi_items()))), tuple(sorted((headers or {}).items())))
         host = httpx.URL(url).host
         with self._lock:
             entry = self._cache.get(key)
-            if entry and entry[0] > self.clock():
+            if entry and entry[0] > self.clock() and not refresh:
                 self._cache.move_to_end(key)
                 return Document(deepcopy(entry[1].data), entry[1].fetched_at, True)
             if entry:
@@ -65,12 +73,16 @@ class ProviderHTTP:
                                      follow_redirects=False) as client:
             for attempt in range(self.retries + 1):
                 try:
+                    if current.get():
+                        current.get().check()
+                    http_attempt()
                     response = await client.get(url, params=params, headers=headers)
-                except httpx.RequestError:
+                except httpx.RequestError as exc:
                     if attempt < self.retries:
                         await self.sleep(0.25 * 2 ** attempt)
                         continue
-                    raise ProviderFailure("network_error") from None
+                    raise ProviderFailure("timeout" if isinstance(exc, httpx.TimeoutException) else "network_error") from None
+                http_status(response.status_code)
                 if response.status_code == 429:
                     delay = self.retry_delay(response.headers.get("Retry-After"))
                     with self._lock:
@@ -100,4 +112,10 @@ class ProviderHTTP:
     def discard(self):
         """Discard invalid schema payloads; adapters call this on normalization errors."""
         with self._lock:
-            self._cache.clear()
+            scope, _ = cache_context()
+            if scope is None:
+                self._cache.clear()
+            else:
+                for key in list(self._cache):
+                    if key[0] == scope:
+                        del self._cache[key]

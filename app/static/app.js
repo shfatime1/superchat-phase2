@@ -3,6 +3,7 @@
 const $ = id => document.getElementById(id);
 const input = $("message-input"), messages = $("messages"), scrollArea = $("scroll-area");
 let conversations = [], activeId = null, storageKey = null, busy = false, ready = false;
+let liveTurn = null, debugTrigger = null;
 const names = {flights: "Flights", shopping: "Shopping", cinema: "Cinema"};
 const money = value => Number(value).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
 function node(tag, className, text) {
@@ -39,7 +40,7 @@ function showError(text, retry) {
 }
 function setBusy(value) {
   busy = value;
-  $("loading").hidden = !value;
+  $("loading").hidden = !value || !!liveTurn;
   input.disabled = value || !!current()?.archived || !ready;
   $("send-button").disabled = value || !input.value.trim() || !!current()?.archived || !ready;
   document.querySelectorAll(".suggestion,.mixed-prompt,.new-chat,.conversation-button").forEach(element => { element.disabled = value || !ready; });
@@ -350,6 +351,7 @@ function renderProviderResult(result) {
     rows.forEach(row => grid.append(createCard(row))); section.append(grid);
   } else if (rows.length) section.append(carousel(grid, rows, createCard, result.domain));
   section.append(providerLink("Open provider website", result.domain === "flights" ? "https://www.aviasales.com/" : source.source_url));
+  if (data.pagination?.has_more) section.append(button("Load more products", () => send("More products.")));
   if (data.cinemas?.length) {
     const places = node("div", "provider-locations"); places.append(node("h4", "", "CinemaPlus locations"));
     data.cinemas.forEach(c => places.append(providerLink(c.name, c.source_url)));
@@ -387,8 +389,25 @@ function renderTurn(turn) {
   if (turn.results?.length) {
     const details = node("details", "card-meta"); details.append(node("summary", "", "Read full response"), node("div", "assistant-text", turn.content)); block.append(details);
   }
+  const debug = button("Debugger", event => {
+    debugTrigger = event.currentTarget;
+    $("debug-content").textContent = turn.debug ? JSON.stringify(turn.debug, null, 2) : window.SuperChatUI.translate("No diagnostics were recorded for this saved response.");
+    $("debug-panel").hidden = false; $("close-debug").focus();
+  }, "debug-button");
+  block.append(debug);
   return block;
 }
+
+function showLive() {
+  liveTurn = node("article", "turn assistant live-turn");
+  const heading = node("div", "assistant-heading"); heading.append(node("span", "assistant-avatar", "✦"), node("span", "", "SuperChat"));
+  liveTurn.steps = node("ol", "processing-steps"); liveTurn.steps.setAttribute("aria-live", "polite");
+  liveTurn.answer = node("div", "assistant-text streaming-text"); liveTurn.answer.setAttribute("aria-live", "polite");
+  liveTurn.append(heading, liveTurn.steps, liveTurn.answer); messages.append(liveTurn);
+  $("loading").hidden = true;
+}
+
+function closeDebugger() { $("debug-panel").hidden = true; debugTrigger?.focus(); }
 function render() {
   const chat = current(); renderSidebar(); messages.replaceChildren();
   $("welcome").hidden = !!chat?.turns.length;
@@ -434,9 +453,21 @@ async function send(text, retry = false) {
     chat.updated = Date.now(); input.value = ""; input.style.height = "auto";
   }
   clearError(); showNotice(""); save(); setBusy(true); render(); scrollBottom();
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
+  showLive();
+  const controller = new AbortController();
+  let idleTimer = setTimeout(() => controller.abort(), 45000);
+  const totalTimer = setTimeout(() => controller.abort(), 180000);
   try {
-    const answer = await api("/api/chat", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(chat.pending), signal: controller.signal});
+    const answer = await window.SuperChatStream(chat.pending, controller.signal, (event, data) => {
+      clearTimeout(idleTimer); idleTimer = setTimeout(() => controller.abort(), 45000);
+      if (event === "progress") {
+        const labels = {starting: "Starting your request", routing: "Understanding your request", response: "Preparing your answer"};
+        const label = data.step === "provider" ? ({flights: "Checking flight prices", shopping: "Finding relevant products", cinema: "Checking movies and showtimes"}[data.domain] || "Checking provider data") : labels[data.step];
+        if (label) { const step = node("li", "", label); liveTurn.steps.append(step); }
+      } else if (event === "text") {
+        liveTurn.answer.append(document.createTextNode(data.delta)); scrollBottom();
+      }
+    });
     chat.lastLanguage = answer.routing.language;
     window.SuperChatUI.syncLanguage(answer.routing.language);
     chat.sessionId = answer.session_id; chat.turns = answer.state.history; chat.pending = null; clearError(); save();
@@ -446,9 +477,9 @@ async function send(text, retry = false) {
     if (error.status === 404) { chat.archived = true; chat.pending = null; save(); }
     else if ([409, 422].includes(error.status)) {
       chat.pending = null; save(); showError("This request could not be accepted. Check the message and try again.");
-    } else showError([502,503,504].includes(error.status) ? "The assistant is temporarily unavailable. Your conversation is saved. Retry safely in a moment." : "The connection was interrupted before we received confirmation. Your message is saved; retry safely.", () => send(null, true));
+    } else showError(error.status === 429 ? "Too many requests. Please wait a moment and retry safely." : [502,503,504].includes(error.status) ? "The assistant is temporarily unavailable. Your conversation is saved. Retry safely in a moment." : "The connection was interrupted before we received confirmation. Your message is saved; retry safely.", () => send(null, true));
   } finally {
-    clearTimeout(timer); setBusy(false); render();
+    clearTimeout(idleTimer); clearTimeout(totalTimer); liveTurn = null; setBusy(false); render();
     if (!chat.archived) input.focus();
   }
 }
@@ -462,6 +493,8 @@ $("scrim").addEventListener("click", closeSidebar);
 $("info-button").addEventListener("click", () => $("info-dialog").showModal());
 $("close-info").addEventListener("click", () => $("info-dialog").close());
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeSidebar(); });
+$("close-debug").addEventListener("click", closeDebugger);
+document.addEventListener("keydown", event => { if (event.key === "Escape" && !$("debug-panel").hidden) closeDebugger(); });
 $("clear-history").addEventListener("click", () => {
   if (busy || !confirm(window.SuperChatUI.translate("Clear saved conversations from this browser?"))) return;
   conversations = []; activeId = null; clearError(); showNotice(""); save(); newConversation();

@@ -3,10 +3,15 @@ from contextlib import asynccontextmanager
 from hashlib import sha256
 from secrets import token_urlsafe
 from threading import RLock
+from threading import Thread, BoundedSemaphore
+from collections import defaultdict, deque
+from queue import Queue, Empty
+from time import monotonic
+import json
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.chat import ChatResponse, ChatService
@@ -19,15 +24,37 @@ from app.responses import GeminiResponseFormulator
 from app.routing import GeminiRouter, InvalidRouterResponse, Router, RouterUnavailable
 from app.schemas import ChatRequest
 from app.state import SessionNotFound, SessionState, SessionStore
+from app.diagnostics import RequestTimeout, configure_logging
 
 
 def create_app(settings: Settings | None = None, router: Router | None = None) -> FastAPI:
+    configure_logging()
     settings = settings or Settings.from_env()
     sessions = SessionStore()
     service = ChatService(router or GeminiRouter(settings), sessions, GeminiResponseFormulator(settings))
     owners = {}
     cached_requests, request_locks = {}, {}
     guard = RLock()
+    rate_windows = defaultdict(deque)
+    streaming_slots = BoundedSemaphore(8)
+
+    def check_rate(request):
+        now = monotonic()
+        keys = [("owner", request.state.owner, settings.chat_rate_limit),
+                ("ip", request.client.host if request.client else "unknown", settings.chat_rate_limit * 4)]
+        with guard:
+            for kind, value, limit in keys:
+                window = rate_windows[(kind, value)]
+                while window and window[0] <= now - 60:
+                    window.popleft()
+                if len(window) >= limit:
+                    raise HTTPException(429, "Too many requests. Please try again shortly.", headers={"Retry-After": str(max(1, int(60 - (now - window[0])) + 1))})
+            for kind, value, _ in keys:
+                rate_windows[(kind, value)].append(now)
+            if len(rate_windows) > 4096:
+                for key in list(rate_windows):
+                    if not rate_windows[key] or rate_windows[key][-1] < now - 60:
+                        del rate_windows[key]
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
@@ -103,6 +130,9 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
 
     @application.post("/api/chat", response_model=ChatResponse, response_model_exclude_none=True)
     def chat(body: ChatRequest, request: Request):
+        return process_chat(body, request)
+
+    def process_chat(body, request, emit=None):
         if not application.state.data_ready:
             raise HTTPException(503, "Data services are not initialized")
         try:
@@ -110,11 +140,12 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
             if body.session_id is not None and owners.get(body.session_id) != owner:
                 raise SessionNotFound()
             if body.request_id is None:
-                result = service.chat(body.message, body.session_id, body.language)
+                check_rate(request)
+                result = service.chat(body.message, body.session_id, body.language, emit=emit, refresh_cache=body.refresh_cache)
                 owners[result.session_id] = owner
                 return result
             key = (owner, body.request_id)
-            fingerprint = (body.message, body.session_id, body.language)
+            fingerprint = (body.message, body.session_id, body.language, body.refresh_cache)
             with guard:
                 lock = request_locks.setdefault(key, RLock())
             with lock:
@@ -123,7 +154,8 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
                     if previous != fingerprint:
                         raise HTTPException(409, "Request ID was already used for another message")
                     return result
-                result = service.chat(body.message, body.session_id, body.language)
+                check_rate(request)
+                result = service.chat(body.message, body.session_id, body.language, emit=emit, refresh_cache=body.refresh_cache)
                 owners[result.session_id] = owner
                 cached_requests[key] = (fingerprint, result)
                 return result
@@ -133,6 +165,48 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
             raise HTTPException(503, str(exc)) from None
         except InvalidRouterResponse:
             raise HTTPException(502, "Routing service returned an invalid result") from None
+        except RequestTimeout:
+            raise HTTPException(504, "The request took too long. Your saved conversation is safe; please retry.") from None
+
+    @application.post("/api/chat/stream")
+    def stream_chat(body: ChatRequest, request: Request):
+        # Check ownership before starting a stream or consuming provider capacity.
+        if not application.state.data_ready:
+            raise HTTPException(503, "Data services are not initialized")
+        if body.session_id is not None and owners.get(body.session_id) != request.state.owner:
+            raise HTTPException(404, "Session not found")
+        if body.request_id is None:
+            raise HTTPException(422, "Streaming requires a request ID for safe retries")
+        if not streaming_slots.acquire(blocking=False):
+            raise HTTPException(429, "The assistant is busy. Please retry shortly.", headers={"Retry-After": "5"})
+        events = Queue()
+        def produce():
+            try:
+                result = process_chat(body, request, emit=lambda event, data: events.put((event, data)))
+                events.put(("complete", result.model_dump(mode="json", exclude_none=True)))
+            except HTTPException as exc:
+                events.put(("error", {"status": exc.status_code,
+                    "code": {429: "rate_limited", 504: "timeout", 404: "session_not_found", 409: "request_conflict"}.get(exc.status_code, "request_failed"),
+                    "retry_after": int((exc.headers or {}).get("Retry-After", "0"))}))
+            except Exception:
+                # No exception body, stack, prompt or upstream payload reaches SSE.
+                events.put(("error", {"status": 500, "code": "request_failed"}))
+            finally:
+                events.put(("done", {}))
+                streaming_slots.release()
+        Thread(target=produce, daemon=True, name="superchat-stream").start()
+        def stream():
+            yield 'event: progress\ndata: {"step":"starting"}\n\n'
+            while True:
+                try:
+                    event, data = events.get(timeout=5)
+                except Empty:
+                    yield ": keep-alive\n\n"
+                    continue
+                if event == "done":
+                    return
+                yield "event: " + event + "\ndata: " + json.dumps(data, ensure_ascii=False) + "\n\n"
+        return StreamingResponse(stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no", "Cache-Control": "no-store"})
 
     @application.get("/api/session/{session_id}", response_model=SessionState,
                      response_model_exclude_none=True)

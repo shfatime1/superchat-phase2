@@ -33,6 +33,7 @@ class ProviderResult(Schema, Generic[T]):
     error: ProviderError | None = None
     # Scope matters: local filtering/comparison does not imply exhaustive coverage.
     partial: bool = False
+    pagination: dict[str, int | bool | None] = Field(default_factory=dict)
 
 
 class Price(Schema):

@@ -72,6 +72,8 @@ class EbayProvider:
         if p.in_stock is not None or p.min_price_azn is not None or p.max_price_azn is not None:
             return unavailable(self.name, "https://www.ebay.com/", "eBay uses native listing currencies; AZN budgets and search-time stock filters are unavailable. Request item details for provider-reported availability.", "unsupported_filter")
         params = {"q": p.query, "limit": 50}
+        if p.offset is not None:
+            params["offset"] = p.offset
         if p.min_price is not None or p.max_price is not None:
             if not p.currency:
                 return self.failure(ProviderFailure("currency_required"))
@@ -122,7 +124,11 @@ class EbayProvider:
                 rows = [r for r in rows if r.price and
                     (p.min_price is None or r.price.amount >= Decimal(str(p.min_price))) and
                     (p.max_price is None or r.price.amount <= Decimal(str(p.max_price)))]
-            return self.result(doc, rows, partial=doc.data["total"] > len(rows))
+            result = self.result(doc, rows, partial=doc.data["total"] > len(rows))
+            more = bool(doc.data.get("itemSummaries")) and doc.data["total"] > (p.offset or 0) + 50 and (p.offset or 0) < 9950
+            result.pagination = {"offset": p.offset or 0, "limit": 50, "has_more": more,
+                                 "next_offset": (p.offset or 0) + 50 if more else None}
+            return result
         except ProviderFailure as exc:
             return self.failure(exc)
         except (KeyError, TypeError, ValueError):

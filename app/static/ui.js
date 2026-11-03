@@ -4,6 +4,18 @@ window.SuperChatUI = (() => {
   const key = "superchat.ui.preferences";
   const dictionary = Object.fromEntries([
     ["New chat", "Yeni söhbət", "Новый чат"], ["New conversation", "Yeni söhbət", "Новый чат"],
+    ["Debugger", "Diaqnostika", "Диагностика"], ["Close debugger", "Diaqnostikanı bağla", "Закрыть диагностику"],
+    ["Load more products", "Daha çox məhsul", "Загрузить ещё товары"],
+    ["Too many requests. Please wait a moment and retry safely.", "Sorğu limitinə çatılıb. Bir az gözləyib yenidən cəhd edin.", "Слишком много запросов. Немного подождите и повторите безопасно."],
+    ["Sanitized request diagnostics. No credentials or internal reasoning.", "Təhlükəsiz sorğu diaqnostikası. Məxfi açarlar və daxili düşüncə göstərilmir.", "Безопасная диагностика запроса. Без секретов и внутренних рассуждений."],
+    ["No diagnostics were recorded for this saved response.", "Bu saxlanmış cavab üçün diaqnostika qeydə alınmayıb.", "Для этого сохранённого ответа диагностика не записана."],
+    ["Starting your request", "Sorğunuz başladılır", "Начинаем обработку запроса"],
+    ["Understanding your request", "Sorğunuz aydınlaşdırılır", "Уточняем ваш запрос"],
+    ["Preparing your answer", "Cavabınız hazırlanır", "Готовим ответ"],
+    ["Checking flight prices", "Uçuş qiymətləri yoxlanılır", "Проверяем цены авиабилетов"],
+    ["Finding relevant products", "Uyğun məhsullar axtarılır", "Ищем подходящие товары"],
+    ["Checking movies and showtimes", "Filmlər və seanslar yoxlanılır", "Проверяем фильмы и сеансы"],
+    ["Checking provider data", "Provayder məlumatları yoxlanılır", "Проверяем данные провайдера"],
     ["Previous results", "Əvvəlki nəticələr", "Предыдущие результаты"], ["Next results", "Növbəti nəticələr", "Следующие результаты"],
     ["YOUR ASSISTANTS", "KÖMƏKÇİLƏRİNİZ", "ВАШИ ПОМОЩНИКИ"], ["RECENT CHATS", "SON SÖHBƏTLƏR", "НЕДАВНИЕ ЧАТЫ"],
     ["Flights", "Uçuşlar", "Авиабилеты"], ["Shopping", "Alış-veriş", "Покупки"], ["Cinema", "Kino", "Кино"],

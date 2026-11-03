@@ -28,7 +28,9 @@ class Settings:
     flight_market: str | None = None
     provider_timeout_seconds: float = 8.0
     provider_retries: int = 2
-    provider_cache_ttl: int = 300
+    provider_cache_ttl: int = 1800
+    chat_timeout_seconds: int = 120
+    chat_rate_limit: int = 30
     api_key: str | None = field(default=None, repr=False)
     model: str = "gemini-flash-latest"
     data_dir: Path = PROJECT_ROOT / "data"
@@ -59,7 +61,9 @@ class Settings:
             flight_market=(os.getenv("FLIGHT_MARKET") or "").strip() or None,
             provider_timeout_seconds=max(0.1, min(30, float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "8")))),
             provider_retries=max(0, min(3, int(os.getenv("PROVIDER_RETRIES", "2")))),
-            provider_cache_ttl=max(1, min(86400, int(os.getenv("PROVIDER_CACHE_TTL", "300")))),
+            provider_cache_ttl=max(1, min(86400, int(os.getenv("PROVIDER_CACHE_TTL", "1800")))),
+            chat_timeout_seconds=max(10, min(180, int(os.getenv("CHAT_TIMEOUT_SECONDS", "120")))),
+            chat_rate_limit=max(1, min(300, int(os.getenv("CHAT_RATE_LIMIT", "30")))),
             api_key=(os.getenv("GEMINI_API_KEY") or "").strip() or None,
             model=(os.getenv("GEMINI_MODEL") or "").strip() or "gemini-flash-latest",
             routing_mode=(os.getenv("SUPERCHAT_ROUTING_MODE") or "auto").strip().lower() or "auto",

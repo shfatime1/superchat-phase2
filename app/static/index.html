@@ -9,6 +9,7 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/ui.js" defer></script>
+  <script src="/static/stream.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
@@ -63,6 +64,11 @@
       <div class="composer-footer"><span data-i18n="Provider data · Cached flight prices · Verify availability with the provider.">Provider data · Cached flight prices · Verify availability with the provider.</span><span class="reference-date">Asia/Baku</span></div>
     </div>
   </main>
+  <aside id="debug-panel" class="debug-panel" role="dialog" aria-labelledby="debug-title" hidden>
+    <header><h2 id="debug-title" data-i18n="Debugger">Debugger</h2><button id="close-debug" class="icon-button" type="button" aria-label="Close debugger" data-i18n-aria="Close debugger">×</button></header>
+    <p class="card-meta" data-i18n="Sanitized request diagnostics. No credentials or internal reasoning.">Sanitized request diagnostics. No credentials or internal reasoning.</p>
+    <pre id="debug-content" tabindex="0"></pre>
+  </aside>
   <dialog id="info-dialog">
     <button class="icon-button dialog-close" id="close-info" aria-label="Close information" data-i18n-aria="Close information">×</button>
     <span class="eyebrow" data-i18n="MEET SUPERCHAT">MEET SUPERCHAT</span><h2 data-i18n="Three possibilities. One conversation.">Three possibilities. One conversation.</h2>

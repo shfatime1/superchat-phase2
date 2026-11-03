@@ -160,6 +160,8 @@ class ProviderService:
     def outcome(self, action, key, response):
         serialized = response.model_dump(mode="json")
         data = {key: serialized["items"], "provider": serialized["source"], "partial": response.partial}
+        if response.pagination:
+            data["pagination"] = response.pagination
         if response.error:
             data["provider_error"] = serialized["error"]
         if self.domain == "cinema":

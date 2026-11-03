@@ -6,6 +6,8 @@ from app.domains.shopping import ShoppingService
 from app.repositories import DataSourceError
 from app.schemas import RoutingResult
 from app.state import apply_routing
+from time import perf_counter
+from app.diagnostics import current
 
 
 class DomainEngine:
@@ -18,9 +20,13 @@ class DomainEngine:
                                     repositories.showtimes, self.inventory),
         }
 
-    def execute(self, routing, state):
+    def execute(self, routing, state, on_result=None):
         outcomes = []
         for intent in routing.intents:
+            trace = current.get()
+            started = perf_counter()
+            if trace:
+                trace.progress("provider", domain=intent.domain)
             # Merge and execute in order, including multiple intents in one domain.
             apply_routing(state, RoutingResult(category=intent.domain, domains=[intent.domain], intents=[intent]))
             snapshot = getattr(state, intent.domain).model_copy(deep=True)
@@ -39,6 +45,13 @@ class DomainEngine:
                 outcome = DomainResult(domain=intent.domain, operation=intent.intent,
                                        status="error", code="data_unavailable")
             outcomes.append(outcome)
+            if trace:
+                trace.check()
+                trace.data["stages"].append({"stage": intent.domain, "duration_ms": round((perf_counter() - started) * 1000)})
+                if outcome.status == "error":
+                    trace.data["errors"].append({"domain": intent.domain, "code": outcome.code})
+            if on_result:
+                on_result(outcome)
         # Shared metadata is applied without merging intents a second time.
         apply_routing(state, RoutingResult(category="ambiguous", language=routing.language,
                                            preferences=routing.preferences))

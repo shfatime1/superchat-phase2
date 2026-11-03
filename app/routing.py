@@ -168,7 +168,7 @@ def product_search_query(message: str) -> str | None:
     without_budget = re.sub(r"\s+and\s*$", "", without_budget).strip()
     if without_budget != text and without_budget and re.search(r"\b(?:laptops?|headphones|earbuds|smartphones?|backpack|tablet|monitor|keyboard)\b", without_budget):
         text = without_budget
-    if re.match(r"^(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|with|only|same|also|cheaper|cheapest|price|any brand|make|keep|filter|sort)\b", text):
+    if re.match(r"^(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|with|only|same|also|cheaper|cheapest|price|any brand|make|keep|filter|sort|more|next page)\b", text):
         return None  # A budget-only follow-up keeps the saved product query.
     if re.fullmatch(r"(?:" + CODES + r")(?:\s+please)?", text):
         return None
@@ -226,6 +226,10 @@ def normalize_request_queries(message, result, state, reference_date=None):
         query = product_search_query(text)
         p = intent.parameters.model_dump(exclude_none=True)
         ctx = state.shopping
+        if re.fullmatch(r"(?:show(?: me)? )?(?:more products|more results|next page)[.!?]*", text.strip(), re.I):
+            p["offset"] = min(9950, (ctx.parameters.offset or 0) + 50)
+            p.pop("query", None)
+            intent.intent, intent.reset_context = "filter", False
         searchable = intent.intent in {"search", "filter", "sort", "follow_up", "resume"}
         if searchable and query is not None:
             intent.intent, intent.reset_context = "search", True
@@ -244,6 +248,7 @@ def normalize_request_queries(message, result, state, reference_date=None):
                         query = reduced or query
                 for field in ("product_ids", "result_positions", "reference", "quantity"):
                     p.pop(field, None)
+                p.pop("offset", None)
                 if ctx.intent:
                     bounds = shopping_price_bounds(text)
                     for kind in ("min", "max"):

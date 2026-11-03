@@ -63,7 +63,8 @@ and are omitted from settings repr, responses and logs.
 | `EBAY_MARKETPLACE` | `EBAY_US` |
 | `PROVIDER_TIMEOUT_SECONDS` | `8`, bounded to 0.1–30 seconds per HTTP phase |
 | `PROVIDER_RETRIES` | `2`, bounded to 0–3 retries for transport errors and selected transient HTTP statuses |
-| `PROVIDER_CACHE_TTL` | `300` seconds, bounded to 1–86400; IATA lookups cache for one day |
+| `PROVIDER_CACHE_TTL` | `1800` seconds (30 minutes), bounded to 1–86400; session-isolated; IATA reference lookups cache for one day |
+| `CHAT_TIMEOUT_SECONDS` / `CHAT_RATE_LIMIT` | `120` seconds request budget / `30` new requests per browser per minute; IP ceiling is four times the browser limit |
 | `GEMINI_TIMEOUT_MS` / `GEMINI_RESPONSE_TIMEOUT_MS` | `30000` / `4000` |
 | `COOKIE_SECURE` | `false` locally; `true` on Render HTTPS |
 | `PORT` / `HOST` | `8000` / `0.0.0.0`; Render supplies `PORT` |
@@ -77,6 +78,11 @@ original 2026-11-02 reference date.
 See [multilingual Shopping diagnostics](docs/multilingual-shopping.md) for the verified
 BuyWhere nullable-category fix, language behavior, and carousel checks. Discovery cards
 initially render seven records; arrows or swiping reveal all remaining returned matches.
+
+See [Phase 2 streaming and operations](docs/phase2-operations.md) for streamed progress,
+the sanitized Debugger, 30-minute session caches, authentication boundaries, request
+limits, pagination and safe timeout/retry behavior. Existing Render services with an
+older `PROVIDER_CACHE_TTL=300` override should use `1800` at the next deployment.
 
 ## Update configuration for the existing Render service
 

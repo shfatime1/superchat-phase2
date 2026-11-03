@@ -54,6 +54,7 @@ class FlightParameters(Schema):
 
 
 class ShoppingParameters(Schema):
+    offset: int | None = Field(default=None, ge=0, le=9950)
     currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
     min_price: float | None = Field(default=None, ge=0)
     max_price: float | None = Field(default=None, ge=0)
@@ -148,6 +149,7 @@ class RoutingResult(Schema):
 class ChatRequest(Schema):
     message: str = Field(min_length=1, max_length=8000)
     language: Literal["az", "en", "ru"] | None = None
+    refresh_cache: bool = False
     session_id: UUID | None = None
     request_id: UUID | None = None
 

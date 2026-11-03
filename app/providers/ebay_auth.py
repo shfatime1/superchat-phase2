@@ -7,6 +7,7 @@ from threading import Event, RLock
 import httpx
 
 from app.providers.http import ProviderFailure
+from app.diagnostics import http_call, http_status, http_attempt, current
 
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 
@@ -50,12 +51,19 @@ class EbayCredentials:
                 self._ready.set()
 
     async def _mint(self):
+        with http_call("POST", TOKEN_URL):
+            return await self._mint_token()
+
+    async def _mint_token(self):
         if not self.client_id or not self.client_secret:
             raise ProviderFailure("missing_credentials")
         basic = base64.b64encode((self.client_id + ":" + self.client_secret).encode()).decode()
         async with httpx.AsyncClient(timeout=self.http.timeout, transport=self.http.transport, follow_redirects=False) as client:
             for attempt in range(self.http.retries + 1):
                 try:
+                    if current.get():
+                        current.get().check()
+                    http_attempt()
                     response = await client.post(TOKEN_URL, headers={"Authorization": "Basic " + basic},
                         data={"grant_type": "client_credentials", "scope": "https://api.ebay.com/oauth/api_scope"})
                 except httpx.RequestError:
@@ -63,6 +71,7 @@ class EbayCredentials:
                         await self.http.sleep(0.25 * 2 ** attempt)
                         continue
                     raise ProviderFailure("network_error") from None
+                http_status(response.status_code)
                 if response.status_code == 429:
                     delay = self.http.retry_delay(response.headers.get("Retry-After"))
                     with self._lock:

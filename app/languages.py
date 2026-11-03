@@ -56,6 +56,7 @@ def detect_language(message, previous=None):
 # Long phrases are replaced before individual words. This is the conservative
 # outage grammar; Gemini still receives the original multilingual request.
 PHRASES = {
+    r"daha çox məhsul|daha cox mehsul|növbəti səhifə|novbeti sehife|ещё товары|еще товары|следующая страница": "more products",
     r"qiyməti artan|qiymeti artan|əvvəl ucuz|evvel ucuz|от дешевых к дорогим|сначала дешевые": "cheapest first",
     r"qiyməti azalan|qiymeti azalan|сначала дорогие": "most expensive first",
     r"birinci(?:si|ni)?|ilk(?:ini)?|перв(?:ый|ую|ое|ого)": "first one",
