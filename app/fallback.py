@@ -11,17 +11,16 @@ from threading import Lock
 
 from pydantic import ValidationError
 
-from app.dates import resolve_date
+from app.dates import date_expression, resolve_date
 from app.cinema_queries import normalize_cinema_discovery
-from app.routing import GeminiRouter, InvalidRouterResponse, RouterUnavailable, product_search_query
+from app.routing import GeminiRouter, InvalidRouterResponse, RouterUnavailable, normalize_request_queries, product_search_query
+from app.query_context import PRODUCTS, domain_clauses
 from app.schemas import RoutingResult
+from app.shopping_currency import normalize_shopping_money
 
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
 NUMBER = r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
 logger = logging.getLogger(__name__)
-PRODUCTS = ("headphones", "earbuds", "laptops", "laptop", "smartphone", "phone", "smartwatch", "speaker",
-            "running shoes", "backpack", "coffee machine", "board game", "coffee maker", "vacuum cleaner",
-            "keyboard", "monitor", "tablet", "boots", "toys", "desk chair")
 
 
 def number(value):
@@ -47,7 +46,9 @@ class LocalRouter:
 
     def route(self, message, state):
         try:
-            return normalize_cinema_discovery(message, self._route(message, state))
+            result = normalize_request_queries(message, self._route(message, state), state,
+                                               self.reference_date() if self.reference_date else None)
+            return normalize_cinema_discovery(message, result)
         except (ValidationError, ValueError):
             # An unsupported local extraction must never become an HTTP 500.
             return RoutingResult(category="ambiguous", source="local", language="en")
@@ -62,8 +63,7 @@ class LocalRouter:
             return unresolved()
         domains = self.domains(text)
         if len(domains) > 1:
-            clauses = re.split(r"\s+(?:and|also|plus)\s+|\s*;\s*", text)
-            parts = [(clause, self.domains(clause)) for clause in clauses]
+            parts = domain_clauses(text, self.domains)
             if len(parts) < 2 or any(len(ds) != 1 for _, ds in parts):
                 return unresolved()
             intents = [self.extract(clause, ds[0], state) for clause, ds in parts]
@@ -95,6 +95,7 @@ class LocalRouter:
 
     def extract(self, text, domain, state):
         p, action = {}, "search"
+        clear_parameters = []
         ctx = getattr(state, domain)
         ids = re.findall(r"\b([fpmsc]\d{3})\b", text)
         id_fields = {"f": "flight_ids", "p": "product_ids", "m": "movie_ids", "s": "showtime_ids", "c": "cinema_ids"}
@@ -187,13 +188,13 @@ class LocalRouter:
             p["sort_by"] = "price_desc"
         if p.get("sort_by") and action == "search" and ctx.intent:
             action = "sort"
-        date_match = re.search(r"\b(\d{4}-\d{2}-\d{2}|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|tonight|tomorrow|today)\b", text)
-        if date_match and domain != "shopping":
-            resolved = resolve_date(date_match[1], self.reference_date() if self.reference_date else None)
+        expression = date_expression(text)
+        if expression and domain != "shopping":
+            resolved = resolve_date(expression, self.reference_date() if self.reference_date else None)
             if resolved is None:
                 return None
             field = "departure_date" if domain == "flights" else "date"
-            p[field], p[field + "_text"] = resolved.isoformat(), date_match[1]
+            p[field], p[field + "_text"] = resolved.isoformat(), expression
         if domain == "flights":
             currency = re.search(r"\b(azn|usd|eur|rub|gbp|try|aed)\b", text)
             if currency:
@@ -219,12 +220,7 @@ class LocalRouter:
                 if re.search(r"\b" + row.flight_number.casefold() + r"\b", text):
                     p["flight_number"] = row.flight_number
         elif domain == "shopping":
-            currency = re.search(r"\b(usd|eur|gbp|rub|try|aed|sgd|vnd|thb|myr)\b", text)
-            if currency:
-                p["currency"] = currency[1].upper()
-                for old, new in (("min_price_azn", "min_price"), ("max_price_azn", "max_price")):
-                    if old in p:
-                        p[new] = p.pop(old)
+            p, clear_parameters = normalize_shopping_money(text, p)
             explicit_query = product_search_query(text) if action in {"search", "sort"} else None
             for term in PRODUCTS:
                 if term in text:
@@ -268,7 +264,8 @@ class LocalRouter:
         # A newly named shopping query should not inherit an unrelated prior brand/budget.
         if action == "search" and p.get("query") and ctx.parameters.query and p["query"] != ctx.parameters.query:
             reset = True
-        return {"domain": domain, "intent": action, "parameters": p, "reset_context": reset}
+        return {"domain": domain, "intent": action, "parameters": p, "reset_context": reset,
+                "clear_parameters": clear_parameters}
 
 
 class ResilientRouter:

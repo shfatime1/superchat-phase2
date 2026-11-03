@@ -10,11 +10,13 @@ from google.genai import types
 from pydantic import ValidationError
 
 from app.config import REFERENCE_DATE, Settings
-from app.dates import resolve_date
+from app.dates import date_expression, resolve_date
 from app.cinema_queries import normalize_cinema_discovery
+from app.query_context import intent_messages
 from app.schemas import (Category, CinemaIntent, Domain, FlightIntent, RoutingResult,
                          ShoppingIntent)
 from app.state import SessionState
+from app.shopping_currency import CODES, SYMBOLS, normalize_shopping_money, shopping_price_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +108,15 @@ never on a simple domain switch or return. clear_parameters lists only constrain
 the user explicitly removed. Null/omitted parameters do not erase stored context.
 language records the language of the current user. preferences contains only newly
 stated shared preferences, never inferred ones.
+For Shopping, $ means USD, ₼ means AZN, and € means EUR. Explicit ISO currency
+codes take precedence over symbols. Never default a symbol-marked budget to AZN.
+Use currency plus min_price/max_price for non-AZN budgets, and currency=AZN plus
+min_price_azn/max_price_azn for AZN budgets. Preserve amounts without conversion.
+In mixed requests, keep each date and budget with its own domain clause. Never
+drop a flight departure date supplied alongside a Shopping request. A fresh named
+product search such as 'Show me laptops' starts a search with reset_context=true;
+do not return old selections or copy filters from a previous headphones search.
+Budget-only, sorting, selection and 'back to' follow-ups preserve their referent.
 
 Competition reference date is {REFERENCE_DATE.isoformat()} (Monday), timezone Asia/Baku.
 Never use the real current date. Tonight/today = 2026-11-02, tomorrow = 2026-11-03,
@@ -132,13 +143,22 @@ class Router(Protocol):
 def product_search_query(message: str) -> str | None:
     """Keep explicit search names intact instead of broadening them to a category."""
     text = message.casefold().strip(" .?!")
+    for symbol, currency in SYMBOLS.items():
+        text = text.replace(symbol, currency.casefold() + " ")
     if re.search(r"[^\x00-\x7f]", text):
         return None  # Preserve Gemini's normalized query for existing language support.
+    text = re.sub(r"^(?:now|actually)[,\s]+", "", text)
     text = re.sub(r"^(?:start (?:a )?new search for|new search for)\s+", "", text)
     text = re.sub(
     r"^(?:please\s+)?(?:show(?:\s+me)?|find(?:\s+me)?|search\s+for|do\s+you\s+have|i\s+need|looking\s+for|i\s+want\s+to\s+buy|i\s+want\s+to\s+see|i\s+am\s+looking\s+for)\s+",
     "",text,)
-    text = re.split(r"\s+(?:under|below|over|above|up to|cheapest first|most expensive first|price ascending|price descending)\b", text)[0]
+    if re.match(r"^(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|with|only|same|also|cheaper|cheapest|price|any brand|make|keep|filter|sort)\b", text):
+        return None  # A budget-only follow-up keeps the saved product query.
+    if re.fullmatch(r"(?:" + CODES + r")(?:\s+please)?", text):
+        return None
+    text = re.sub(r"\s+for (?:the|my|a) trip$", "", text)
+    text = re.split(r"\s+with\s+(?:(?:a\s+)?budget\b|(?:a\s+)?(?:\d|usd|eur|azn))|\s+(?:for\s+)?(?:a\s+)?budget\b", text)[0]
+    text = re.split(r"\s+(?:under|below|over|above|up to|at least|less than|max(?:imum)?|min(?:imum)?|cheapest first|most expensive first|price ascending|price descending)\b", text)[0]
     text = re.sub(r"^(?:a|an|the)\s+", "", text)
     if text in {"products", "all products", "the catalog", "catalog", "all available products", "shopping", "shop", "alış-veriş"}:
         return ""
@@ -148,6 +168,78 @@ def product_search_query(message: str) -> str | None:
         return None
     text = re.sub(r"^(?:i\s+want\s+to\s+buy|i\s+want\s+to\s+see|i\s+need|i\s+am\s+looking\s+for)\s+", "", text)
     return text or None
+
+
+def normalize_request_queries(message, result, state, reference_date=None):
+    """Repair explicit query/date/budget extraction before state is merged.
+
+    Only unambiguous clauses are used; a flight's currency/date never leaks into
+    Shopping or Cinema. The router's source stays visible as Gemini or local.
+    """
+    fresh_shopping = False
+    for intent, text in intent_messages(message, result):
+        if intent.domain == "flights":
+            # A return date must not be mistaken for an omitted departure date.
+            outbound = re.split(r"\b(?:return(?:ing)?|back on)\b", text, maxsplit=1, flags=re.I)[0]
+            expression = date_expression(outbound)
+            if expression and resolve_date(expression, reference_date) is not None:
+                intent.parameters.departure_date_text = expression
+                intent.parameters.departure_date = resolve_date(expression, reference_date)
+            continue
+        if intent.domain != "shopping":
+            continue
+        query = product_search_query(text)
+        p = intent.parameters.model_dump(exclude_none=True)
+        ctx = state.shopping
+        searchable = intent.intent in {"search", "filter", "sort", "follow_up", "resume"}
+        if searchable and query is not None:
+            intent.intent, intent.reset_context = "search", True
+            fresh_shopping = True
+            if query == "":
+                p = {}
+            else:
+                # Drop copied filters/selections on a fresh topic. Retain only
+                # explicitly named refinements, never an old headphone category.
+                for field in ("category", "brand", "color"):
+                    value = p.get(field)
+                    if value and value.casefold() not in text.casefold():
+                        p.pop(field)
+                    elif value:
+                        reduced = re.sub(r"\b" + re.escape(value.casefold()) + r"\b", "", query).strip()
+                        query = reduced or query
+                for field in ("product_ids", "result_positions", "reference", "quantity"):
+                    p.pop(field, None)
+                if ctx.intent:
+                    bounds = shopping_price_bounds(text)
+                    for kind in ("min", "max"):
+                        if kind not in bounds:
+                            p.pop(f"{kind}_price", None)
+                            p.pop(f"{kind}_price_azn", None)
+                    if not re.search(r"\b(?:" + CODES + r")\b|[$₼€]", text, re.I) and not bounds:
+                        p.pop("currency", None)
+                    if not re.search(r"\b(stock|available)\b", text, re.I):
+                        p.pop("in_stock", None)
+                    if not re.search(r"\b(cheapest|expensive|price|rating|sort)\b", text, re.I):
+                        p.pop("sort_by", None)
+                p["query"] = query
+        elif query is None and ctx.intent and not re.search(r"\b(new search|start over)\b", text, re.I):
+            # Model reset flags cannot erase the subject of a genuine follow-up.
+            intent.reset_context = False
+            bounds = shopping_price_bounds(text)
+            if bounds:
+                # An unmarked refinement stays in the established currency.
+                if ctx.parameters.currency and not re.search(r"\b(?:" + CODES + r")\b|[$₼€]", text, re.I):
+                    p["currency"] = ctx.parameters.currency
+            if searchable and shopping_price_bounds(text) and not re.search(r"\b(first|second|third|one|details|compare)\b", text, re.I):
+                intent.intent = "filter"
+                for field in ("query", "product_ids", "result_positions", "reference"):
+                    p.pop(field, None)
+        p, clears = normalize_shopping_money(text, p)
+        intent.parameters = type(intent.parameters).model_validate(p)
+        intent.clear_parameters = list(dict.fromkeys(intent.clear_parameters + clears))
+    if fresh_shopping and result.category == Category.FOLLOW_UP and result.domains == [Domain.SHOPPING]:
+        result.category = Category.SHOPPING
+    return result
 
 
 class GeminiRouter:
@@ -211,20 +303,7 @@ class GeminiRouter:
             raise InvalidRouterResponse(
                 "Routing service returned an invalid result"
             ) from None
-        if result.category == Category.SHOPPING:
-            query = product_search_query(message)
-            for intent in result.intents:
-                if intent.intent == "search" and not intent.parameters.product_ids and query is not None:
-                    # Do not allow the model to turn an absent named product into alternatives.
-                    if query == "":
-                        intent.parameters = type(intent.parameters)()
-                        intent.reset_context = True
-                    else:
-                        for field in ("category", "brand", "color"):
-                            value = getattr(intent.parameters, field)
-                            if value:
-                                query = re.sub(r"\b" + re.escape(value.casefold()) + r"\b", "", query)
-                        intent.parameters.query = query.strip() or intent.parameters.query
+        result = normalize_request_queries(message, result, state, base_date)
         result = self._resolve_context(result, state, base_date)
         return normalize_cinema_discovery(message, result) if self.settings.data_mode != "fixtures" else result
 

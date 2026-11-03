@@ -51,7 +51,7 @@ def test_switch_across_three_domains_and_return(client, gemini):
     assert state["flights"]["parameters"]["sort_by"] == "price_asc"
     assert state["cinema"]["parameters"]["date"] == "2026-11-07"
     assert state["cinema"]["parameters"]["genre"] == "sci-fi"
-    assert state["shopping"]["parameters"] == {"query": "headphones", "max_price_azn": 100}
+    assert state["shopping"]["parameters"] == {"query": "headphones", "currency": "AZN", "max_price_azn": 100}
     assert state["last_active_domain"] == "shopping"
     assert len(state["history"]) == 12
     assert client.get(f"/api/session/{sid}").json() == state

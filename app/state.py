@@ -97,7 +97,11 @@ class SessionStore:
 def apply_routing(state: SessionState, result: RoutingResult) -> None:
     for extracted in result.intents:
         domain_state = getattr(state, extracted.domain)
-        if extracted.reset_context:
+        new_shopping_query = (extracted.domain == "shopping" and extracted.intent == "search" and
+                              extracted.parameters.query is not None and domain_state.parameters.query is not None and
+                              extracted.parameters.query.casefold() != domain_state.parameters.query.casefold())
+        reset = extracted.reset_context or new_shopping_query
+        if reset:
             domain_state.provider_snapshot = {}
             domain_state.last_result_ids = []
             domain_state.selected_ids = []
@@ -105,7 +109,12 @@ def apply_routing(state: SessionState, result: RoutingResult) -> None:
             if extracted.domain == "cinema":
                 domain_state.last_showtime_ids = []
                 domain_state.selected_showtime_ids = []
-        previous = {} if extracted.reset_context else domain_state.parameters.model_dump()
+        previous = {} if reset else domain_state.parameters.model_dump()
+        if extracted.domain == "shopping" and extracted.parameters.currency:
+            old_currency = previous.get("currency") or ("AZN" if any(previous.get(k) is not None for k in ("min_price_azn", "max_price_azn")) else None)
+            if old_currency and old_currency.upper() != extracted.parameters.currency.upper():
+                for key in ("min_price", "max_price", "min_price_azn", "max_price_azn"):
+                    previous.pop(key, None)
         for key in extracted.clear_parameters:
             previous.pop(key, None)
         previous.update(extracted.parameters.model_dump(exclude_none=True))
