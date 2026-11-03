@@ -145,7 +145,10 @@ def create_app(settings: Settings | None = None, router: Router | None = None) -
         except asyncio.TimeoutError:
             raise HTTPException(408, "media_upload_timeout") from None
         except MediaFailure as exc:
-            raise HTTPException(exc.status, exc.code, headers={"Retry-After": "30"} if exc.status == 429 else None) from None
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=exc.status,
+                content={"detail": exc.code, "error": exc.diagnostic},
+                headers={"Retry-After": "30"} if exc.status == 429 else None)
         finally:
             media_slots.release()
 

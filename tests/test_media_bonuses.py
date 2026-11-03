@@ -11,6 +11,16 @@ PNG = b"\x89PNG\r\n\x1a\n" + bytes(32)
 WAV = b"RIFF" + bytes(4) + b"WAVE" + bytes(32)
 
 
+def test_image_failure_exposes_only_sanitized_stage_and_status(gemini):
+    _, enqueue = gemini
+    enqueue(errors.ClientError(400, {"error": {"message": "SECRET invalid schema"}}))
+    with TestClient(create_app(Settings(api_key="test", routing_mode="offline"))) as client:
+        response = client.post("/api/shopping/visual", content=PNG, headers={"Content-Type": "image/png"})
+        assert response.status_code == 503
+        assert response.json()["error"] == {"stage": "gemini_request", "reason": "request_rejected", "upstream_status": 400}
+        assert "SECRET" not in response.text
+
+
 def test_image_identification_review_and_existing_shopping_flow(gemini):
     generate, enqueue = gemini
     enqueue({"identifiable": True, "query": "wireless headphones", "product_type": "headphones",

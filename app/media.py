@@ -28,8 +28,9 @@ class Transcript(BaseModel):
 
 
 class MediaFailure(Exception):
-    def __init__(self, status, code):
+    def __init__(self, status, code, stage="upload_validation", reason=None, upstream_status=None):
         self.status, self.code = status, code
+        self.diagnostic = {"stage": stage, "reason": reason or code, "upstream_status": upstream_status}
 
 
 def validate_media(data, mime, kind):
@@ -71,7 +72,7 @@ class GeminiMedia:
 
     def generate(self, data, mime, schema, instruction):
         if not self.settings.api_key:
-            raise MediaFailure(503, "gemini_not_configured")
+            raise MediaFailure(503, "gemini_not_configured", "configuration")
         try:
             with genai.Client(api_key=self.settings.api_key, http_options=types.HttpOptions(
                     timeout=min(20000, self.settings.gemini_timeout_ms),
@@ -79,13 +80,14 @@ class GeminiMedia:
                 response = client.models.generate_content(model=self.settings.model,
                     contents=types.Content(role="user", parts=[types.Part.from_bytes(data=data, mime_type=mime)]),
                     config=types.GenerateContentConfig(system_instruction=instruction, temperature=0,
-                        response_mime_type="application/json", response_json_schema=schema.model_json_schema()))
+                        response_mime_type="application/json", response_schema=schema))
         except Exception as exc:
             reason, status = safe_provider_failure(exc)
             logger.warning("gemini_media_failed reason=%s http_status=%s", reason, status)
             raise MediaFailure(429 if status == 429 else 504 if reason == "timeout" else 503,
-                               "media_rate_limited" if status == 429 else "media_timeout" if reason == "timeout" else "media_unavailable") from None
+                               "media_rate_limited" if status == 429 else "media_timeout" if reason == "timeout" else "media_unavailable",
+                               "gemini_request", reason, status) from None
         try:
             return schema.model_validate_json(response.text or "")
         except (ValidationError, ValueError, TypeError, AttributeError):
-            raise MediaFailure(502, "invalid_media_response") from None
+            raise MediaFailure(502, "invalid_media_response", "gemini_response") from None

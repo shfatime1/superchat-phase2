@@ -89,6 +89,12 @@ window.SuperChatBonuses = (() => {
       error.code === "gemini_not_configured" ? "key" : error.status === 429 ? "limited" :
       error.status === 413 || error.status === 415 ? "format" : error.status === 504 || error.status === 408 ? "timeout" :
       error.code === "visual_requires_buywhere" ? "provider" : "failed", true);
+    if (error.diagnostic) {
+      const d = error.diagnostic;
+      const safe = [d.stage, d.reason].filter(v => typeof v === "string" && /^[a-z_]{1,64}$/.test(v));
+      if (Number.isInteger(d.upstream_status)) safe.push("HTTP " + d.upstream_status);
+      if (safe.length) $("media-feedback").textContent += " (" + safe.join(" / ") + ")";
+    }
   }
   async function post(path, blob, op) {
     const timer = setTimeout(() => op.controller.abort(), 30000);
@@ -96,8 +102,10 @@ window.SuperChatBonuses = (() => {
       const scope = op.context.sessionId ? "?session_id=" + encodeURIComponent(op.context.sessionId) : "";
       const response = await fetch(path + scope, {method: "POST", credentials: "same-origin", body: blob,
         headers: {"Content-Type": blob.type}, signal: op.controller.signal});
-      const body = await response.json();
-      if (!response.ok) { const error = new Error("Media request failed"); error.status = response.status; error.code = body.detail; throw error; }
+      let body;
+      try { body = await response.json(); } catch (_) { body = null; }
+      if (!response.ok || !body) { const error = new Error("Media request failed"); error.status = response.status; error.code = body?.detail;
+        error.diagnostic = body?.error || {stage: "upload_response", reason: "non_json_response", upstream_status: response.status}; throw error; }
       return body;
     } finally { clearTimeout(timer); }
   }
@@ -119,9 +127,9 @@ window.SuperChatBonuses = (() => {
     if (!/^(image\/jpeg|image\/png|image\/webp)$/.test(file.type) || file.size > 4 * 1024 * 1024) { status("format", true); return; }
     const op = begin("image"); status("image");
     try {
-      const preview = new FileReader();
+      try { const preview = new FileReader();
       preview.onload = () => { if (operation === op) $("visual-preview").src = preview.result; };
-      preview.readAsDataURL(file);
+      preview.readAsDataURL(file); } catch (_) { /* Preview must not prevent upload. */ }
       const result = await post("/api/shopping/visual", file, op);
       if (op.cancelled || composer.context.id !== op.context.id) return;
       identification = result;

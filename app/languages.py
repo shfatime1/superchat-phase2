@@ -36,7 +36,7 @@ def detect_language(message, previous=None):
     if requested_language(message):
         return requested_language(message)
     text = message.casefold()
-    if re.search(r"\b(?:mene|lazimdi|lazimdir|qulaqciq\w*|qulaqcig\w*)\b", text):
+    if re.search(r"\b(?:mene|lazimdi|lazimdir|qulaqciq\w*|qulaqcig\w*|notebo+k+(?:lar|lər|ler)\w*)\b", text):
         return "az"
     # Grammar signals beat borrowed product names and city names.
     az = len(re.findall(r"\b(?:göstər|goster|ucuz|ucuş\w*|uçuş\w*|sabah|bu gün|bugün|bu gun|dan|daha|notebooklar|noutbuk\w*|qulaqlıq\w*|qulaqliq\w*|filmlər|filmler|seans\w*|birinci|ikinci|müqayisə|muqayise|zəhmət|zehmet)\b", text))
@@ -58,6 +58,8 @@ def detect_language(message, previous=None):
 # Long phrases are replaced before individual words. This is the conservative
 # outage grammar; Gemini still receives the original multilingual request.
 PHRASES = {
+    # Product stems plus AZ plural/accusative endings, including common ASR typos.
+    r"(?:notebo+k+|noutbuk|noutbook|notbuk)(?:(?:lar|lər|ler)(?:ı|i|ın|in|ını|ini)?|u|ü|ı|i)?": "laptops",
     r"(?:mənə|mene)\s+(.+?)\s+(?:lazımdır|lazimdi|lazimdir|lazımdı)": r"i need \1",
     r"qulaqcıq(?:lar)?|qulaqciq(?:lar)?|qulaqcig(?:lar)?": "headphones",
     r"elmi fantastika|elmi-fantastik|fantastika|научная фантастика|фантастик[аи]": "sci-fi",
@@ -170,7 +172,7 @@ def normalize_text(message):
     text = re.sub(r"\b(?:mənə|mene|мне)\b", "", text)
     text = re.sub(r"\b(?:lazimdi|lazimdir|lazımdır|lazımdı)\b", "", text)
     text = re.sub(r"\b(?:is\s+)?(?:price|priced|costs?)\s+(?=under|below|above|over)", "", text)
-    text = re.sub(r"\s+show me[.!?]*$", "", text)
+    text = re.sub(r"\s+(?:show me|ver|verin)[.!?]*$", "", text)
     text = text.casefold()
     for index, value in enumerate(protected):
         text = text.replace(f"zzprotected{index}zz", value)
